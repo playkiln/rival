@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "kind": "source",
+  "engine": "phaser",
+  "targets": [
+    {
+      "device": "desktop",
+      "orientation": "any"
+    },
+    {
+      "device": "mobile",
+      "orientation": "any"
+    }
+  ],
+  "build": {
+    "command": "npm run build",
+    "outDir": "dist"
+  },
+  "packageRoot": "dist"
+}

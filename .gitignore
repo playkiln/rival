@@ -1,0 +1,13 @@
+node_modules/
+dist/
+*.zip
+*.sha256
+
+.DS_Store
+Thumbs.db
+
+*.log
+npm-debug.log*
+
+.vscode/
+.idea/
