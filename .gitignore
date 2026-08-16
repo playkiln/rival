@@ -1,13 +1,15 @@
 node_modules/
 dist/
-*.zip
-*.sha256
 
-.DS_Store
-Thumbs.db
+# playkiln publish artifacts
+*.zip
+*.zip.sha256
 
 *.log
 npm-debug.log*
+
+.DS_Store
+Thumbs.db
 
 .vscode/
 .idea/
