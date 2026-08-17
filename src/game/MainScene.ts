@@ -15,6 +15,13 @@ const COUNTDOWN_FRAMES = 90
 /** Car sprite size in world units. */
 const CAR_LENGTH = 30
 const CAR_WIDTH = 16
+/** Border band width; kerb band inside/outside the edge; kerb stripe pitch — world units. */
+const BORDER_W = 6
+const KERB_IN = 6
+const KERB_OUT = 10
+const KERB_STRIPE = 28
+/** Depth reserved for HUD objects; the camera split keys off it. */
+const HUD_DEPTH = 20
 
 const COLORS = {
   ground: 0x18231b,
@@ -70,6 +77,8 @@ export class MainScene extends Phaser.Scene {
   private turningNow = false
 
   private carSprite!: Phaser.GameObjects.Image
+  /** Second camera for the HUD: zoom 1, ignores the world; the main camera ignores the HUD. */
+  private hudCam!: Phaser.Cameras.Scene2D.Camera
   private marks!: Phaser.GameObjects.Graphics
   private camTarget = { x: 0, y: 0 }
 
@@ -103,6 +112,7 @@ export class MainScene extends Phaser.Scene {
     this.createCarSprite()
     this.createHud()
     this.bindInput()
+    this.splitCameras()
 
     this.scale.on('resize', () => this.layout())
     this.layout()
@@ -203,20 +213,85 @@ export class MainScene extends Phaser.Scene {
     // Skid marks live under the edges but over the tarmac.
     this.marks = this.add.graphics().setDepth(3)
 
-    // Edges, with red kerb ticks where the centre-line curves hard.
+    // Border: a solid white band on both edges. Kerbs: on the corner arcs the
+    // band widens into red/white stripes of a fixed length, measured along
+    // the edge itself so inner and outer kerbs stripe at the same pitch.
     const edges = this.add.graphics().setDepth(4)
-    edges.lineStyle(3, COLORS.edge, 0.85)
-    edges.strokePoints(toVec(t.leftEdge), true)
-    edges.strokePoints(toVec(t.rightEdge), true)
     const S = t.samples
-    for (let i = 0; i < S.length; i += 2) {
-      const a = S[(i - 3 + S.length) % S.length]
-      const c = S[(i + 3) % S.length]
-      const turn = Math.abs(Math.atan2(a.tx * c.ty - a.ty * c.tx, a.tx * c.tx + a.ty * c.ty))
-      if (turn > 0.09 && Math.floor(i / 2) % 2 === 0) {
-        edges.lineStyle(7, COLORS.kerb, 0.9)
-        edges.lineBetween(t.leftEdge[i].x, t.leftEdge[i].y, t.leftEdge[(i + 2) % S.length].x, t.leftEdge[(i + 2) % S.length].y)
-        edges.lineBetween(t.rightEdge[i].x, t.rightEdge[i].y, t.rightEdge[(i + 2) % S.length].x, t.rightEdge[(i + 2) % S.length].y)
+    const N = S.length
+    const hw = t.halfWidth
+    // A quad between two centre-line stations at two lateral offsets.
+    const quad = (
+      a: { x: number; y: number; tx: number; ty: number },
+      b: { x: number; y: number; tx: number; ty: number },
+      side: 1 | -1,
+      o0: number,
+      o1: number,
+      color: number,
+    ): void => {
+      edges.fillStyle(color, 1)
+      edges.fillPoints(
+        [
+          new Phaser.Math.Vector2(a.x - a.ty * side * o0, a.y + a.tx * side * o0),
+          new Phaser.Math.Vector2(a.x - a.ty * side * o1, a.y + a.tx * side * o1),
+          new Phaser.Math.Vector2(b.x - b.ty * side * o1, b.y + b.tx * side * o1),
+          new Phaser.Math.Vector2(b.x - b.ty * side * o0, b.y + b.tx * side * o0),
+        ],
+        true,
+      )
+    }
+    const station = (
+      a: (typeof S)[number],
+      b: (typeof S)[number],
+      u: number,
+    ): { x: number; y: number; tx: number; ty: number } => {
+      const tx = a.tx + (b.tx - a.tx) * u
+      const ty = a.ty + (b.ty - a.ty) * u
+      const l = Math.hypot(tx, ty) || 1
+      return { x: a.x + (b.x - a.x) * u, y: a.y + (b.y - a.y) * u, tx: tx / l, ty: ty / l }
+    }
+    for (const side of [1, -1] as const) {
+      // Border along the whole lap.
+      for (let i = 0; i < N; i++) {
+        quad(S[i], S[(i + 1) % N], side, hw - BORDER_W / 2, hw + BORDER_W / 2, COLORS.edge)
+      }
+      // Kerbs on each maximal run of arc samples. Start each run on a red stripe.
+      let i = 0
+      // Begin at a non-arc sample so a run never wraps around index 0 unnoticed.
+      while (i < N && S[i].arc) i++
+      const first = i
+      let visited = 0
+      while (visited < N) {
+        const cur = S[(first + visited) % N]
+        if (!cur.arc) {
+          visited++
+          continue
+        }
+        // Collect the run.
+        let run = 0
+        while (visited + run < N && S[(first + visited + run) % N].arc) run++
+        let along = 0
+        for (let k = 0; k < run; k++) {
+          const a = S[(first + visited + k) % N]
+          const b = S[(first + visited + k + 1) % N]
+          // Edge-length of this segment at the kerb's radius.
+          const ax = a.x - a.ty * side * hw
+          const ay = a.y + a.tx * side * hw
+          const bx = b.x - b.ty * side * hw
+          const by = b.y + b.tx * side * hw
+          const segLen = Math.hypot(bx - ax, by - ay)
+          // Split at stripe boundaries.
+          let u0 = 0
+          while (u0 < 1) {
+            const stripeEnd = (Math.floor(along / KERB_STRIPE) + 1) * KERB_STRIPE
+            const u1 = Math.min(1, u0 + (stripeEnd - along) / segLen)
+            const color = Math.floor(along / KERB_STRIPE) % 2 === 0 ? COLORS.kerb : COLORS.edge
+            quad(station(a, b, u0), station(a, b, u1), side, hw - KERB_IN, hw + KERB_OUT, color)
+            along += (u1 - u0) * segLen
+            u0 = u1
+          }
+        }
+        visited += run
       }
     }
 
@@ -270,32 +345,45 @@ export class MainScene extends Phaser.Scene {
       .text(0, 0, formatMs(0), { ...style, fontSize: '30px' })
       .setOrigin(0.5, 0)
       .setScrollFactor(0)
-      .setDepth(20)
+      .setDepth(HUD_DEPTH)
     this.hudLast = this.add
       .text(0, 0, '', { ...style, fontSize: '15px', color: '#9aa3b2' })
       .setOrigin(0.5, 0)
       .setScrollFactor(0)
-      .setDepth(20)
+      .setDepth(HUD_DEPTH)
     this.hudChecks = this.add
       .text(0, 0, '', { ...style, fontSize: '15px', color: '#8fb0ff' })
       .setOrigin(0.5, 0)
       .setScrollFactor(0)
-      .setDepth(20)
+      .setDepth(HUD_DEPTH)
     this.hudMessage = this.add
       .text(0, 0, '', { ...style, fontSize: '40px', align: 'center' })
       .setOrigin(0.5)
       .setScrollFactor(0)
-      .setDepth(20)
+      .setDepth(HUD_DEPTH)
     this.hudHint = this.add
       .text(0, 0, '', { ...style, fontSize: '14px', color: '#9aa3b2' })
       .setOrigin(0.5, 1)
       .setScrollFactor(0)
-      .setDepth(20)
+      .setDepth(HUD_DEPTH)
+  }
+
+  /**
+   * Camera zoom scales scrollFactor-0 objects too, so the HUD gets its own
+   * camera at zoom 1. Everything at HUD_DEPTH is HUD; the rest is world.
+   */
+  private splitCameras(): void {
+    this.hudCam = this.cameras.add(0, 0, this.scale.width, this.scale.height)
+    const hud = this.children.list.filter((o) => (o as unknown as { depth: number }).depth === HUD_DEPTH)
+    const world = this.children.list.filter((o) => (o as unknown as { depth: number }).depth !== HUD_DEPTH)
+    this.cameras.main.ignore(hud)
+    this.hudCam.ignore(world)
   }
 
   private layout(): void {
     const w = this.scale.width
     const h = this.scale.height
+    this.hudCam.setSize(w, h)
     // Zoom so the car reads at phone size and the next corner is in view on desktop.
     const zoom = Phaser.Math.Clamp(Math.min(w, h) / 560, 0.7, 1.5)
     this.cameras.main.setZoom(zoom)
