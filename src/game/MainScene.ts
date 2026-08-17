@@ -28,8 +28,8 @@ const STEP_MS = 1000 / 60
 const STEP = STEP_MS / 1000
 /** Frames of countdown before the car moves. */
 const COUNTDOWN_FRAMES = 90
-/** Frames of grace after resuming from pause before the sim runs again. */
-const RESUME_FRAMES = 45
+/** Milliseconds of grace after resuming from pause before the sim runs again. Wall time, not frames — the sim is paused, so nothing else ticks. */
+const RESUME_MS = 750
 /** Depth reserved for HUD objects; the camera split keys off it. */
 const HUD_DEPTH = 20
 
@@ -103,7 +103,7 @@ export class MainScene extends Phaser.Scene {
 
   private state: State = 'idle'
   private paused = false
-  private resumeGrace = 0
+  private resumeGraceMs = 0
   private frame = 0
   private goFrame = 0
   private accumulator = 0
@@ -217,7 +217,7 @@ export class MainScene extends Phaser.Scene {
     this.goFrame = 0
     this.accumulator = 0
     this.paused = false
-    this.resumeGrace = 0
+    this.resumeGraceMs = 0
     this.marks.clear()
     this.hudLap.setText(formatMs(0))
     this.hudSplit.setText('')
@@ -341,7 +341,7 @@ export class MainScene extends Phaser.Scene {
     if (!this.paused) return
     this.paused = false
     this.pointerHeld = 0
-    this.resumeGrace = RESUME_FRAMES
+    this.resumeGraceMs = RESUME_MS
     this.accumulator = 0
     this.dim.setVisible(false)
     this.pausePanel.setVisible(false)
@@ -563,10 +563,12 @@ export class MainScene extends Phaser.Scene {
       this.updateHud()
       return
     }
-    if (this.resumeGrace > 0) {
+    if (this.resumeGraceMs > 0) {
       // Hold the world still for a beat after resume so the player can re-read it.
-      this.resumeGrace -= 1
-      this.showMessage(this.resumeGrace > 0 ? 'ready' : 'GO', this.resumeGrace > 0 ? Infinity : 500)
+      // Counted in wall time so the beat is the same length at any refresh rate.
+      this.resumeGraceMs -= Math.min(delta, 250)
+      const waiting = this.resumeGraceMs > 0
+      this.showMessage(waiting ? 'ready' : 'GO', waiting ? Infinity : 500)
       this.updateHud()
       return
     }
@@ -600,6 +602,8 @@ export class MainScene extends Phaser.Scene {
         this.lap.startFrame = this.frame
         this.showMessage('GO', 700)
         this.ghostSprite.setVisible(this.ghost !== null)
+        // The lap's t = 0 sample is the grid pose, exactly as the medal ghosts have it.
+        recordStep(this.recorder, 0, this.car.x, this.car.y, this.car.heading)
       }
       return
     }
