@@ -33,5 +33,6 @@ export const TRACK: TrackDef = {
   width: 120,
   checkpoints: 7,
   startOffset: 60 * SCALE,
+  kerbGap: 160 * SCALE,
   corners: RAW.map(([x, y, r]) => ({ x: x * SCALE, y: y * SCALE, r: r * SCALE })),
 }

@@ -30,6 +30,8 @@ export type TrackDef = {
   startOffset: number
   /** Approximate spacing between samples along the centre-line. */
   spacing?: number
+  /** Straights shorter than this between two arcs are kerbed right through. */
+  kerbGap?: number
 }
 
 export type TrackSample = Vec & {
@@ -38,8 +40,10 @@ export type TrackSample = Vec & {
   /** Unit tangent. */
   tx: number
   ty: number
-  /** True on a corner arc, false on a straight — the kerbs key off this. */
+  /** True on a corner arc, false on a straight. */
   arc: boolean
+  /** True where kerbs run: every arc, plus short straights linking two arcs (a chicane reads as one kerbed section). */
+  kerb: boolean
 }
 
 export type Track = {
@@ -125,7 +129,7 @@ export function buildTrack(def: TrackDef): Track {
   // Walk the loop starting on the straight out of the last corner: straight
   // (last → first), arc(first), straight, arc, … The start line is startOffset
   // along that first straight, so rotate afterwards.
-  const raw: Omit<TrackSample, 's'>[] = []
+  const raw: Omit<TrackSample, 's' | 'kerb'>[] = []
   const pushStraight = (a: Vec, b: Vec): void => {
     const dx = b.x - a.x
     const dy = b.y - a.y
@@ -177,12 +181,38 @@ export function buildTrack(def: TrackDef): Track {
   }
   const rotated = raw.slice(startIdx).concat(raw.slice(0, startIdx))
 
+  // Kerbs: arcs, plus straights short enough to belong to the corners around them.
+  const kerbGap = def.kerbGap ?? 0
+  const kerbed = rotated.map((p) => p.arc)
+  {
+    const M = rotated.length
+    let i = 0
+    while (i < M) {
+      if (rotated[i].arc) {
+        i++
+        continue
+      }
+      let j = i
+      let len = 0
+      while (j < M && !rotated[j].arc) {
+        const a = rotated[j]
+        const b = rotated[(j + 1) % M]
+        len += Math.hypot(b.x - a.x, b.y - a.y)
+        j++
+      }
+      // Only runs bounded by arcs on both sides (the loop is closed, so any run
+      // that does not wrap index 0 is); a wrapped run is left as a straight.
+      if (i > 0 && j < M && len < kerbGap) for (let k = i; k < j; k++) kerbed[k] = true
+      i = j
+    }
+  }
+
   const samples: TrackSample[] = []
   let s = 0
   for (let i = 0; i < rotated.length; i++) {
     const a = rotated[i]
     const b = rotated[(i + 1) % rotated.length]
-    samples.push({ ...a, s })
+    samples.push({ ...a, s, kerb: kerbed[i] })
     s += Math.hypot(b.x - a.x, b.y - a.y)
   }
   const length = s
@@ -240,7 +270,7 @@ export function pointAt(track: Track, s: number): TrackSample {
   }
   const a = S[lo]
   const d = s - a.s
-  return { x: a.x + a.tx * d, y: a.y + a.ty * d, s, tx: a.tx, ty: a.ty, arc: a.arc }
+  return { x: a.x + a.tx * d, y: a.y + a.ty * d, s, tx: a.tx, ty: a.ty, arc: a.arc, kerb: a.kerb }
 }
 
 /**

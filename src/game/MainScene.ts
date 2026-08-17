@@ -254,21 +254,21 @@ export class MainScene extends Phaser.Scene {
       for (let i = 0; i < N; i++) {
         quad(S[i], S[(i + 1) % N], side, hw, hw + BORDER_W, COLORS.edge)
       }
-      // Kerbs on each maximal run of arc samples. Start each run on a red stripe.
+      // Kerbs on each maximal kerbed run (arcs, and short straights between them). Start each run on a red stripe.
       let i = 0
       // Begin at a non-arc sample so a run never wraps around index 0 unnoticed.
-      while (i < N && S[i].arc) i++
+      while (i < N && S[i].kerb) i++
       const first = i
       let visited = 0
       while (visited < N) {
         const cur = S[(first + visited) % N]
-        if (!cur.arc) {
+        if (!cur.kerb) {
           visited++
           continue
         }
         // Collect the run.
         let run = 0
-        while (visited + run < N && S[(first + visited + run) % N].arc) run++
+        while (visited + run < N && S[(first + visited + run) % N].kerb) run++
         let along = 0
         for (let k = 0; k < run; k++) {
           const a = S[(first + visited + k) % N]
