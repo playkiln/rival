@@ -24,7 +24,8 @@
     </style>
     <!-- Official Playkiln SDK (protocol v1) — host owns sessions and results -->
     <script>
-      window.PlaykilnOptions = { capabilities: { audio: true } }
+      // Capabilities are declared only once they are true: audio arrives with the sound stage.
+      window.PlaykilnOptions = { capabilities: {} }
     </script>
     <script src="./playkiln-sdk.js"></script>
   </head>

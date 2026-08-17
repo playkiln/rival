@@ -118,12 +118,9 @@ wrong, say so and stop; do not quietly build the other thing.
   pushing, never after. The same goes for anything embedded in the package:
   the manifest `developer` block, credits, comments.
 
-## Not yet built
+## Manifest and capabilities
 
-The manifest still carries starter defaults. Two are known to need changing
-when the relevant work lands, and neither is a bug today:
-
-- `features.scoreDirection` is `higher`; Rival reports lap milliseconds and
-  needs `lower`.
-- `capabilities` are declared at runtime in the `init` payload, not in the
-  manifest — `audio` when sound lands, `storage` when saves land.
+The manifest declares `features.scoreDirection: lower` (lap milliseconds).
+`capabilities` are declared at runtime in the `init` payload, not in the
+manifest, and only once true — `audio` when the sound stage lands, `storage`
+when saves land. Today the payload declares none.

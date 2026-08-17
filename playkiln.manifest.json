@@ -2,14 +2,14 @@
   "schemaVersion": 1,
   "id": "rival",
   "title": "Rival",
-  "tagline": "A small Rival session on Playkiln.",
+  "tagline": "One lap. One input. Race your ghost.",
   "descriptionFile": "playkiln.page.md",
   "entry": "index.html",
   "minSdkVersion": 1,
   "orientation": "any",
   "features": {
     "score": true,
-    "scoreDirection": "higher",
+    "scoreDirection": "lower",
     "duration": true
   },
   "presentation": {

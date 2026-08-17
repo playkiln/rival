@@ -2,10 +2,14 @@
  * Screenshot the game inside the real `playkiln preview` host using headless
  * Chrome over the DevTools protocol — no extra dependencies.
  *
- *   node scripts/shot.mjs out.png [--hold 1200,300 --hold 2000,400] [--wait 3000] [--size 1280x720]
+ *   node scripts/shot.mjs out.png [--flag autodrive] [--hold 1200,300 ...] [--press 2000,Space ...] [--click 3000,0,50 ...]
+ *                         [--nostart] [--wait 3000] [--total 6000] [--size 1280x720] [--shots a.png ...]
  *
- * Steps: open the preview, press the host's session.start, optionally hold
- * the "turn" input for the given windows (start,duration in ms), then capture.
+ * Steps: open the preview, optionally set rival.dev.<flag>=1 in the game's
+ * localStorage and reload, press the host's session.start, then over `total`
+ * ms: hold the turn input for the given windows, press keys at the given
+ * times, capture extra shots at the given times; capture `out` at the end.
+ * Prints the host protocol log tail so the sessionEnd trail can be checked.
  * Requires `playkiln preview` running on 127.0.0.1:5180 and Chrome installed.
  */
 import { spawn } from 'node:child_process'
@@ -20,11 +24,23 @@ const PORT = 9333
 const args = process.argv.slice(2)
 const out = args.find((a) => !a.startsWith('--')) ?? 'shot.png'
 const holds = []
+const presses = []
+const shots = []
+const flags = []
+const clicks = []
 let wait = 2500
+let total = null
+let nostart = false
 let size = [1280, 720]
 for (let i = 0; i < args.length; i++) {
   if (args[i] === '--hold') holds.push(args[++i].split(',').map(Number))
+  if (args[i] === '--press') { const [t, k] = args[++i].split(','); presses.push([Number(t), k]) }
+  if (args[i] === '--shots') { const [f, t] = args[++i].split('@'); shots.push([f, Number(t)]) }
+  if (args[i] === '--click') { const [t, dx, dy] = args[++i].split(',').map(Number); clicks.push([t, dx, dy]) }
+  if (args[i] === '--flag') flags.push(args[++i])
+  if (args[i] === '--nostart') nostart = true
   if (args[i] === '--wait') wait = Number(args[++i])
+  if (args[i] === '--total') total = Number(args[++i])
   if (args[i] === '--size') size = args[++i].split('x').map(Number)
 }
 
@@ -92,11 +108,29 @@ async function main() {
   await cdp('Page.navigate', { url: URL })
   await sleep(wait)
 
-  // Press the host's session.start control, whatever it is called in the DOM.
-  const started = await cdp('Runtime.evaluate', {
+  // Dev flags live in the game's own localStorage (same origin as the host
+  // page in preview); set them, then reload the package through the host.
+  if (flags.length) {
+    const r = await cdp('Runtime.evaluate', {
+      expression: `(() => {
+        const f = document.querySelector('iframe'); if (!f) return 'no iframe'
+        try { ${JSON.stringify(flags)}.forEach(k => f.contentWindow.localStorage.setItem('rival.dev.' + k, '1')) } catch (e) { return 'flag error ' + e.message }
+        const btn = [...document.querySelectorAll('button')].find(b => /reload/i.test(b.textContent))
+        if (btn) btn.click()
+        return 'flags set' + (btn ? ', reloaded' : ' (no reload button)')
+      })()`,
+      returnByValue: true,
+    })
+    console.log(r.result.value)
+    await sleep(wait)
+  }
+
+  // Press the host's session.start control (unless --nostart: the host
+  // auto-starts attempt 1 on ready, which is the only way to see attempt 1).
+  const started = nostart ? { result: { value: 'not started (autostart only)' } } : await cdp('Runtime.evaluate', {
     expression: `(() => {
       const els = [...document.querySelectorAll('button, [role=button], input[type=button]')]
-      const el = els.find(e => /session\\.start|start session|start/i.test(e.textContent || e.value || ''))
+      const el = els.find(e => /session\.start|start session|start/i.test(e.textContent || e.value || ''))
       if (!el) return 'no start control: ' + els.map(e => (e.textContent||e.value||'').trim()).join(' | ')
       el.click(); return 'clicked: ' + (el.textContent || el.value).trim()
     })()`,
@@ -104,19 +138,52 @@ async function main() {
   })
   console.log(started.result.value)
 
-  // Drive: hold the pointer on the game canvas for each window.
   const t0 = Date.now()
   const iframeRect = await cdp('Runtime.evaluate', {
     expression: `(() => { const f = document.querySelector('iframe'); if (!f) return null; const r = f.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 } })()`,
     returnByValue: true,
   })
   const at = iframeRect.result.value ?? { x: size[0] / 2, y: size[1] / 2 }
-  const end = holds.length ? Math.max(...holds.map(([s, d]) => s + d)) + 400 : 2200
-  for (const [start, dur] of holds) {
-    await sleep(Math.max(0, t0 + start - Date.now()))
-    await cdp('Input.dispatchMouseEvent', { type: 'mousePressed', x: at.x, y: at.y, button: 'left', clickCount: 1 })
-    await sleep(dur)
-    await cdp('Input.dispatchMouseEvent', { type: 'mouseReleased', x: at.x, y: at.y, button: 'left', clickCount: 1 })
+  // Focus the game so key presses land in the iframe.
+  await cdp('Input.dispatchMouseEvent', { type: 'mouseMoved', x: at.x, y: at.y })
+
+  // Merge everything into one timeline.
+  const events = []
+  for (const [s, d] of holds) {
+    events.push({ t: s, run: () => cdp('Input.dispatchMouseEvent', { type: 'mousePressed', x: at.x, y: at.y, button: 'left', clickCount: 1 }) })
+    events.push({ t: s + d, run: () => cdp('Input.dispatchMouseEvent', { type: 'mouseReleased', x: at.x, y: at.y, button: 'left', clickCount: 1 }) })
+  }
+  const KEYS = { Space: { key: ' ', code: 'Space', windowsVirtualKeyCode: 32 }, Escape: { key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 }, Enter: { key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 }, KeyP: { key: 'p', code: 'KeyP', windowsVirtualKeyCode: 80 } }
+  for (const [t, k] of presses) {
+    const key = KEYS[k] ?? { key: k, code: k }
+    events.push({ t, run: async () => {
+      // Click the iframe first so it has keyboard focus, without a drag.
+      await cdp('Input.dispatchMouseEvent', { type: 'mousePressed', x: at.x, y: at.y, button: 'left', clickCount: 1 })
+      await cdp('Input.dispatchMouseEvent', { type: 'mouseReleased', x: at.x, y: at.y, button: 'left', clickCount: 1 })
+      await cdp('Input.dispatchKeyEvent', { type: 'keyDown', ...key })
+      await sleep(80)
+      await cdp('Input.dispatchKeyEvent', { type: 'keyUp', ...key })
+    } })
+  }
+  for (const [t, dx, dy] of clicks) {
+    events.push({ t, run: async () => {
+      await cdp('Input.dispatchMouseEvent', { type: 'mousePressed', x: at.x + dx, y: at.y + dy, button: 'left', clickCount: 1 })
+      await sleep(60)
+      await cdp('Input.dispatchMouseEvent', { type: 'mouseReleased', x: at.x + dx, y: at.y + dy, button: 'left', clickCount: 1 })
+    } })
+  }
+  for (const [f, t] of shots) {
+    events.push({ t, run: async () => {
+      const s = await cdp('Page.captureScreenshot', { format: 'png' })
+      writeFileSync(f, Buffer.from(s.data, 'base64'))
+      console.log('wrote', f, 'at', t)
+    } })
+  }
+  events.sort((a, b) => a.t - b.t)
+  const end = total ?? (events.length ? Math.max(...events.map((e) => e.t)) + 400 : 2200)
+  for (const e of events) {
+    await sleep(Math.max(0, t0 + e.t - Date.now()))
+    await e.run()
   }
   await sleep(Math.max(0, t0 + end - Date.now()))
 
@@ -126,12 +193,11 @@ async function main() {
 
   // Pull anything the host logged, for the protocol trail.
   const log = await cdp('Runtime.evaluate', {
-    expression: `(() => { const el = document.querySelector('pre, [class*=log], textarea'); return el ? el.textContent.slice(-1500) : '' })()`,
+    expression: `(() => { const el = document.querySelector('pre, [class*=log], textarea'); return el ? el.textContent.slice(-2500) : '' })()`,
     returnByValue: true,
   })
-  if (log.result.value) console.log('--- host log tail ---\n' + log.result.value)
+  if (log.result.value) console.log('--- host log tail ---\n' + log.result.value.replace(/\[(\d\d:\d\d:\d\d)\]/g, '\n[$1]'))
 }
-
 main()
   .catch((e) => {
     console.error(e)

@@ -1,34 +1,31 @@
 # Rival
 
-A small Rival session on Playkiln.
+One lap. One input. Race your ghost.
 
-This file is **your** game page on Playkiln. It ships in the package next to
-`playkiln.manifest.json` and is rendered on `/game/rival` as the main column
-under the play surface. Edit it freely — this is builder voice, not platform copy.
+Hold to turn left, release to turn right — that is the whole control scheme,
+on touch and on keyboard. Speed is constant; the skill is the racing line.
 
 ## How to play
 
-1. Press **Play now** on the game page.
-2. [Describe the goal in one sentence.]
-3. [What counts as a good run?]
+1. Press **Play now**. The first run shows a start screen; press to begin.
+2. After the countdown, drive one lap of the circuit. Every checkpoint must be
+   crossed in order — the circuit cannot be cut. Leaving the tarmac slows you
+   down; it never resets the run.
+3. A translucent car races alongside you: the **ghost**. Beat it and the next
+   one appears. Bronze, silver, gold — then your own best lap becomes the
+   rival, and the only way to see it improve is to drive better than you did.
+
+The number at each checkpoint is your gap to the ghost. Green is ahead.
 
 ## Controls
 
 | Input | Action |
 | --- | --- |
-| Click / tap | [Primary action] |
-| Arrow keys / WASD | [Movement, if any] |
+| Hold (tap and hold anywhere / space / arrows / W) | Turn left |
+| Release | Turn right |
+| Esc / P / the ❚❚ button | Pause — resume or restart |
 
-## Build notes
+## Notes
 
-This starter uses Phaser + Vite. Run `npm install` then `playkiln preview`.
-Ship only the production build contents your publish path packages.
-
-## Tips
-
-- Keep this page short and concrete.
-- Supported markdown: headings, paragraphs, lists, tables, links, images,
-  code blocks, and blockquotes. Raw HTML is not rendered.
-- Package-relative images work (`![shot](assets/card.svg)`).
-- If you omit `descriptionFile` from the manifest, the page falls back to the
-  manifest `description` string, then `tagline`.
+Your best lap and medals last for the visit. Saving between visits arrives
+when the platform offers storage.
