@@ -15,10 +15,9 @@ const COUNTDOWN_FRAMES = 90
 /** Car sprite size in world units. */
 const CAR_LENGTH = 30
 const CAR_WIDTH = 16
-/** Border band width; kerb band inside/outside the edge; kerb stripe pitch — world units. */
+/** Border and kerb bands sit flush against the surface edge and extend outward — world units. */
 const BORDER_W = 6
-const KERB_IN = 6
-const KERB_OUT = 10
+const KERB_W = 14
 const KERB_STRIPE = 28
 /** Depth reserved for HUD objects; the camera split keys off it. */
 const HUD_DEPTH = 20
@@ -253,7 +252,7 @@ export class MainScene extends Phaser.Scene {
     for (const side of [1, -1] as const) {
       // Border along the whole lap.
       for (let i = 0; i < N; i++) {
-        quad(S[i], S[(i + 1) % N], side, hw - BORDER_W / 2, hw + BORDER_W / 2, COLORS.edge)
+        quad(S[i], S[(i + 1) % N], side, hw, hw + BORDER_W, COLORS.edge)
       }
       // Kerbs on each maximal run of arc samples. Start each run on a red stripe.
       let i = 0
@@ -286,7 +285,7 @@ export class MainScene extends Phaser.Scene {
             const stripeEnd = (Math.floor(along / KERB_STRIPE) + 1) * KERB_STRIPE
             const u1 = Math.min(1, u0 + (stripeEnd - along) / segLen)
             const color = Math.floor(along / KERB_STRIPE) % 2 === 0 ? COLORS.kerb : COLORS.edge
-            quad(station(a, b, u0), station(a, b, u1), side, hw - KERB_IN, hw + KERB_OUT, color)
+            quad(station(a, b, u0), station(a, b, u1), side, hw, hw + KERB_W, color)
             along += (u1 - u0) * segLen
             u0 = u1
           }
