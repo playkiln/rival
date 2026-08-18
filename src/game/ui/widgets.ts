@@ -44,6 +44,7 @@ export function button(
   height: number,
   onPress: () => void,
   primary = false,
+  silent = false,
 ): Button {
   const bg = scene.add.graphics()
   const draw = (hover: boolean): void => {
@@ -68,6 +69,8 @@ export function button(
     'pointerdown',
     (_p: Phaser.Input.Pointer, _x: number, _y: number, event: Phaser.Types.Input.EventData) => {
       event.stopPropagation()
+      // Announced on the scene rather than played here: widgets know nothing about audio.
+      if (!silent) scene.events.emit('ui:tap')
       onPress()
     },
   )
@@ -93,7 +96,8 @@ export type SettingRow = {
 export function settingRow(scene: Phaser.Scene, name: string, width: number, onCycle: () => void): SettingRow {
   const t = label(scene, name, 15, UI.dim, 'left')
   t.setX(-width / 2)
-  const value = button(scene, '', 96, 32, onCycle)
+  // Silent: the value change itself has a sound (`ui-toggle`), and two clicks per tap is one too many.
+  const value = button(scene, '', 96, 32, onCycle, false, true)
   value.container.setX(width / 2 - 48)
   const container = scene.add.container(0, 0, [t, value.container])
   return {

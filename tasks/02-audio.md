@@ -142,15 +142,36 @@ noise), and any voice.
 
 ## Acceptance criteria
 
-- [ ] All four music states behave: menu, race, result, best-sting duck and
+- [x] All four music states behave: menu, race, result, best-sting duck and
       return; RACE AGAIN causes no restart hiccup.
-- [ ] Engine note tracks speed and sags off-track; no loop survives finish,
+- [x] Engine note tracks speed and sags off-track; no loop survives finish,
       pause, abort or terminate.
-- [ ] Every SFX in the table fires on its trigger.
-- [ ] Toggles and volumes work live, persist across a reload (via the save
+- [x] Every SFX in the table fires on its trigger.
+- [x] Toggles and volumes work live, persist across a reload (via the save
       document, Task 1 §4), and default to ON at moderate volume.
-- [ ] Platform mute-all silences the game completely with no errors, and
+- [x] Platform mute-all silences the game completely with no errors, and
       unmuting restores the player's own settings.
-- [ ] Tab hidden / host pause silences audio; resume restores it.
-- [ ] Loops are seam-free on headphones.
-- [ ] `playkiln validate` passes; package size still comfortable.
+- [x] Tab hidden / host pause silences audio; resume restores it.
+- [ ] Loops are seam-free on headphones. *(Measured seam-clean — the loop
+      buffers join within their own sample-to-sample step and the music seams
+      are crossfaded — but nobody has listened yet. The one box a headless
+      run cannot tick.)*
+- [x] `playkiln validate` passes; package size still comfortable (8.1 MB,
+      6.4 MB of it audio).
+
+## How it was verified
+
+`scripts/shot.mjs` grew `--probe` and `--eval` (behind `--flag probe`, which
+puts the game on the frame's window). Every state above was driven in the
+real `playkiln preview` host and the sound manager read back at each moment:
+menu → countdown (engine idling at 0.80×, ramping) → racing (1.15×; 0.81×
+and gravel at 0.48 off-track; tyres at ~0.3 under slip) → pause (bed parked,
+menu loop back) → resume → finish (bed stopped, sting over a parked result
+loop). Host mute was exercised through the SDK's own `audio.set` message,
+and the tab-hidden path through a synthetic `visibilitychange`. Zero errors
+in the game frame throughout.
+
+One deviation from the plan: SFX ship as **WAV, not OGG**. The three driving
+loops must join sample-exactly, and PCM has no encoder priming or padding to
+put a click at the seam; the whole SFX set is 512 KB, so nothing was bought
+by compressing it.

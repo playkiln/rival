@@ -1,5 +1,6 @@
 import Phaser from 'phaser'
 import type { SessionEndResult, SessionStartContext } from '../host/GameHost'
+import { GameAudio } from './GameAudio'
 import type { MedalKey } from './ghosts'
 import { MEDAL_ORDER, applyLap, createProgress, rivalFor, type Progress, type Rival } from './progress'
 import { DEFAULT_CAR, copyCar, createCar, stepCar, type CarParams, type CarState } from './sim/car'
@@ -41,6 +42,8 @@ const END_GUARD_MS = 400
 
 const MEDAL_LABEL: Record<MedalKey, string> = { bronze: 'BRONZE', silver: 'SILVER', gold: 'GOLD' }
 const MEDAL_COLOR: Record<MedalKey, string> = { bronze: UI.bronze, silver: UI.silver, gold: UI.gold }
+/** One chime, pitched up per tier. */
+const MEDAL_RATE: Record<MedalKey, number> = { bronze: 1, silver: 1.19, gold: 1.5 }
 
 /**
  * Developer switches, read from localStorage so nothing in the UI exposes
@@ -130,6 +133,7 @@ export class MainScene extends Phaser.Scene {
   private keys: Phaser.Input.Keyboard.Key[] = []
   private turningNow = false
 
+  private audio!: GameAudio
   private carSprite!: Phaser.GameObjects.Image
   private ghostSprite!: Phaser.GameObjects.Image
   private marks!: Phaser.GameObjects.Graphics
@@ -188,6 +192,7 @@ export class MainScene extends Phaser.Scene {
     this.progress = progress
     // The scene may not have run create() yet; showMenu() paints this anyway.
     if (this.menuBest) this.paintMenu()
+    this.audio?.setPreferences(progress.prefs)
   }
 
   setSaveHandler(handler: (progress: Progress) => void): void {
@@ -198,7 +203,14 @@ export class MainScene extends Phaser.Scene {
     return this.progress.bestMs === null ? '' : `Your best ${formatMs(this.progress.bestMs)}`
   }
 
+  preload(): void {
+    GameAudio.queueAssets(this.load)
+  }
+
   create(): void {
+    this.audio = new GameAudio(this, this.progress.prefs)
+    // Every button announces its press here rather than knowing about audio.
+    this.events.on('ui:tap', () => this.audio.playSfx('ui-tap'))
     this.track = buildTrack(TRACK)
     this.car = createCar(this.track, this.params)
     this.prevCar = createCar(this.track, this.params)
@@ -248,6 +260,7 @@ export class MainScene extends Phaser.Scene {
     this.state = 'idle'
     this.paused = false
     this.sessionId = null
+    this.audio.stopAll()
     this.hidePanels()
     this.hudHint.setText('')
     this.pauseButton.container.setVisible(false)
@@ -283,6 +296,7 @@ export class MainScene extends Phaser.Scene {
 
   private showMenu(): void {
     this.state = 'menu'
+    this.audio.setMusicState('menu')
     this.paintMenu()
     this.dim.setVisible(true)
     this.menuPanel.setVisible(true)
@@ -310,11 +324,15 @@ export class MainScene extends Phaser.Scene {
     this.hudHint.setText('hold to turn left · release to turn right')
     this.pauseButton.container.setVisible(true)
     this.showMessage('3', Infinity)
+    this.audio.setMusicState('race')
+    this.audio.startDriving()
+    this.audio.playSfx('countdown-tick')
   }
 
   private finishLap(valid: boolean, lapFrames: number): void {
     if (this.state !== 'racing' || !this.sessionId) return
     this.state = 'finished'
+    this.audio.stopDriving()
     const ms = Math.round(lapFrames * STEP_MS)
     const rival = this.rival
 
@@ -340,6 +358,8 @@ export class MainScene extends Phaser.Scene {
     this.showMessage('', 0)
 
     if (!valid || !recording) {
+      this.audio.playSfx('lap-invalid')
+      this.audio.setMusicState('result')
       this.endTitle.setText('LAP INVALID').setColor(UI.bad)
       this.endTime.setText(formatMs(ms))
       this.endDelta.setText('a checkpoint was missed — the circuit cannot be cut').setColor(UI.dim)
@@ -350,6 +370,14 @@ export class MainScene extends Phaser.Scene {
       // Persist on a new best or a new medal, and on nothing else. A game that
       // writes on every retry makes a cheap capability look expensive.
       if (outcome.newBest || outcome.earned.length) this.saveHandler?.(this.progress)
+      this.audio.playSfx('lap-done')
+      if (outcome.newBest) this.audio.playBestSting()
+      else this.audio.setMusicState('result')
+      if (outcome.earned.length) {
+        // The chime lands after the line sound and the sting's first beat, not on top of them.
+        const top = outcome.earned[outcome.earned.length - 1]
+        this.time.delayedCall(outcome.newBest ? 900 : 500, () => this.audio.playSfx('medal', MEDAL_RATE[top]))
+      }
       this.endTitle.setText(outcome.newBest ? 'NEW BEST' : 'LAP COMPLETE').setColor(outcome.newBest ? UI.accent : UI.text)
       this.endTime.setText(formatMs(ms))
       if (rival) {
@@ -399,6 +427,9 @@ export class MainScene extends Phaser.Scene {
     if (this.paused || (this.state !== 'racing' && this.state !== 'countdown')) return
     this.paused = true
     this.pointerHeld = 0
+    this.audio.pauseDriving()
+    this.audio.playSfx('pause-in')
+    this.audio.setMusicState('menu')
     this.dim.setVisible(true)
     this.pausePanel.setVisible(true)
     this.pauseButton.container.setVisible(false)
@@ -412,6 +443,9 @@ export class MainScene extends Phaser.Scene {
     this.pointerHeld = 0
     this.resumeGraceMs = RESUME_MS
     this.accumulator = 0
+    this.audio.playSfx('pause-out')
+    this.audio.setMusicState('race')
+    this.audio.startDriving()
     this.dim.setVisible(false)
     this.pausePanel.setVisible(false)
     this.pauseButton.container.setVisible(true)
@@ -431,6 +465,7 @@ export class MainScene extends Phaser.Scene {
     this.sessionId = null
     this.state = 'finished'
     this.paused = false
+    this.audio.stopDriving()
     this.hidePanels()
     this.endHandler?.(result)
     this.requestReplay(intent)
@@ -470,6 +505,8 @@ export class MainScene extends Phaser.Scene {
   private changePrefs(mutate: (p: Progress['prefs']) => void): void {
     mutate(this.progress.prefs)
     this.paintSettings()
+    this.audio.setPreferences(this.progress.prefs)
+    this.audio.playSfx('ui-toggle')
     this.saveHandler?.(this.progress)
   }
 
@@ -668,6 +705,9 @@ export class MainScene extends Phaser.Scene {
       if (document.hidden) {
         this.pointerHeld = 0
         this.pauseRun()
+        this.audio.setHostPaused(true)
+      } else {
+        this.audio.setHostPaused(false)
       }
     })
 
@@ -734,6 +774,9 @@ export class MainScene extends Phaser.Scene {
     this.renderCars(alpha)
     this.updateCamera(delta)
     this.updateHud()
+    // The countdown car sits still, so the note idles at the bottom of its band and ramps in.
+    const c = this.car
+    this.audio.updateDriving(this.state === 'racing' ? c.speedScale : 0.55, this.slipAngle(), c.offTrack, delta)
   }
 
   private step(): void {
@@ -744,14 +787,16 @@ export class MainScene extends Phaser.Scene {
     this.frame += 1
 
     if (this.state === 'countdown') {
-      if (this.frame === 30) this.showMessage('2', Infinity)
-      else if (this.frame === 60) this.showMessage('1', Infinity)
-      else if (this.frame >= COUNTDOWN_FRAMES) {
+      if (this.frame === 30 || this.frame === 60) {
+        this.showMessage(this.frame === 30 ? '2' : '1', Infinity)
+        this.audio.playSfx('countdown-tick')
+      } else if (this.frame >= COUNTDOWN_FRAMES) {
         this.state = 'racing'
         this.goFrame = this.frame
         this.lap.armed = true
         this.lap.startFrame = this.frame
         this.showMessage('GO', 700)
+        this.audio.playSfx('countdown-go')
         this.ghostSprite.setVisible(this.ghost !== null)
         // The lap's t = 0 sample is the grid pose, exactly as the medal ghosts have it.
         recordStep(this.recorder, 0, this.car.x, this.car.y, this.car.heading)
@@ -781,16 +826,22 @@ export class MainScene extends Phaser.Scene {
     const delta = (t - g.checkpointFrames[index]) * STEP_MS
     this.hudSplit.setText(formatDelta(delta)).setColor(delta <= 0 ? UI.good : UI.bad)
     this.splitUntil = this.time.now + 1500
+    this.audio.playSfx(delta <= 0 ? 'checkpoint-up' : 'checkpoint-down')
+  }
+
+  /** How far the velocity and the nose disagree, radians — what both the marks and the tyre sound follow. */
+  private slipAngle(): number {
+    const c = this.car
+    let slip = Math.atan2(c.vy, c.vx) - c.heading
+    while (slip > Math.PI) slip -= Math.PI * 2
+    while (slip < -Math.PI) slip += Math.PI * 2
+    return Math.abs(slip)
   }
 
   /** Tyre marks when the velocity and the nose disagree — makes slip visible. */
   private leaveMarks(): void {
     const c = this.car
-    const vAng = Math.atan2(c.vy, c.vx)
-    let slip = vAng - c.heading
-    while (slip > Math.PI) slip -= Math.PI * 2
-    while (slip < -Math.PI) slip += Math.PI * 2
-    const strength = Math.abs(slip)
+    const strength = this.slipAngle()
     if (strength < 0.12 && !c.offTrack) return
     const rx = c.x - Math.cos(c.heading) * (CAR_LENGTH * 0.4)
     const ry = c.y - Math.sin(c.heading) * (CAR_LENGTH * 0.4)

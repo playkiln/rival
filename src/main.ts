@@ -159,6 +159,15 @@ async function boot(): Promise<void> {
 
   const game = createGame()
   runningGame = game
+  // Dev probe (scripts/shot.mjs --probe): the game on the window, behind the
+  // same localStorage switch family as the scene's own dev flags.
+  try {
+    if (window.localStorage.getItem('rival.dev.probe') === '1') {
+      ;(window as unknown as { __rival?: unknown }).__rival = game
+    }
+  } catch {
+    // no storage, no probe
+  }
   await waitForGameReady(game)
   game.sound.mute = muted
   playkiln.loading(0.7)

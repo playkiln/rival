@@ -4,6 +4,15 @@
  *
  *   node scripts/shot.mjs out.png [--flag autodrive] [--hold 1200,300 ...] [--press 2000,Space ...] [--click 3000,0,50 ...]
  *                         [--nostart] [--wait 3000] [--total 6000] [--size 1280x720] [--shots a.png ...]
+ *                         [--probe 2500 ...] [--eval 2500,expr ...]
+ *
+ * --probe t   prints the sound manager's state at t ms (every sound: playing /
+ *             paused, volume, rate) plus mute/lock — needs `--flag probe`,
+ *             which puts the game on the frame's window as `__rival`.
+ * --eval t,js runs `js` inside the game frame at t (with `game` in scope when
+ *             --flag probe is on) and prints the result.
+ * Uncaught errors and console.error calls inside the game frame are collected
+ * from the moment the page is up and printed at the end.
  *
  * Steps: open the preview, optionally set rival.dev.<flag>=1 in the game's
  * localStorage and reload, press the host's session.start, then over `total`
@@ -28,6 +37,8 @@ const presses = []
 const shots = []
 const flags = []
 const clicks = []
+const probes = []
+const evals = []
 let wait = 2500
 let total = null
 let nostart = false
@@ -38,6 +49,8 @@ for (let i = 0; i < args.length; i++) {
   if (args[i] === '--shots') { const [f, t] = args[++i].split('@'); shots.push([f, Number(t)]) }
   if (args[i] === '--click') { const [t, dx, dy] = args[++i].split(',').map(Number); clicks.push([t, dx, dy]) }
   if (args[i] === '--flag') flags.push(args[++i])
+  if (args[i] === '--probe') probes.push(Number(args[++i]))
+  if (args[i] === '--eval') { const a = args[++i]; const c = a.indexOf(','); evals.push([Number(a.slice(0, c)), a.slice(c + 1)]) }
   if (args[i] === '--nostart') nostart = true
   if (args[i] === '--wait') wait = Number(args[++i])
   if (args[i] === '--total') total = Number(args[++i])
@@ -54,6 +67,7 @@ const chrome = spawn(CHROME, [
   '--no-first-run',
   '--use-angle=swiftshader',
   '--enable-unsafe-swiftshader',
+  '--autoplay-policy=no-user-gesture-required',
   'about:blank',
 ])
 chrome.stderr.on('data', () => {})
@@ -108,6 +122,18 @@ async function main() {
   await cdp('Page.navigate', { url: URL })
   await sleep(wait)
 
+  // Collect errors from inside the game frame for the whole run.
+  const ERR_HOOK = `(() => {
+    const f = document.querySelector('iframe'); if (!f) return 'no iframe'
+    const w = f.contentWindow; if (w.__errs) return 'hooked'
+    w.__errs = []
+    w.addEventListener('error', (e) => w.__errs.push('error: ' + e.message))
+    w.addEventListener('unhandledrejection', (e) => w.__errs.push('rejection: ' + (e.reason && e.reason.message || e.reason)))
+    const ce = w.console.error.bind(w.console); w.console.error = (...a) => { w.__errs.push('console.error: ' + a.map(String).join(' ')); ce(...a) }
+    return 'hooked'
+  })()`
+  await cdp('Runtime.evaluate', { expression: ERR_HOOK, returnByValue: true })
+
   // Dev flags live in the game's own localStorage (same origin as the host
   // page in preview); set them, then reload the package through the host.
   if (flags.length) {
@@ -123,6 +149,7 @@ async function main() {
     })
     console.log(r.result.value)
     await sleep(wait)
+    await cdp('Runtime.evaluate', { expression: ERR_HOOK, returnByValue: true })
   }
 
   // Press the host's session.start control (unless --nostart: the host
@@ -172,6 +199,20 @@ async function main() {
       await cdp('Input.dispatchMouseEvent', { type: 'mouseReleased', x: at.x + dx, y: at.y + dy, button: 'left', clickCount: 1 })
     } })
   }
+  const inFrame = (js) => `(() => { const f = document.querySelector('iframe'); if (!f) return 'no iframe'; const w = f.contentWindow; const game = w.__rival; try { return (${js}) } catch (e) { return 'eval error: ' + e.message } })()`
+  const PROBE = `(() => { if (!game) return 'no game (use --flag probe)'; const m = game.sound; return JSON.stringify({ mute: m.mute, locked: m.locked, sounds: m.sounds.map(s => s.key + ':' + (s.isPlaying ? 'play' : s.isPaused ? 'pause' : 'stop') + '@' + s.volume.toFixed(2) + (s.rate !== 1 ? 'x' + s.rate.toFixed(2) : '')) }) })()`
+  for (const t of probes) {
+    events.push({ t, run: async () => {
+      const r = await cdp('Runtime.evaluate', { expression: inFrame(PROBE), returnByValue: true })
+      console.log(`probe@${t}`, r.result.value)
+    } })
+  }
+  for (const [t, js] of evals) {
+    events.push({ t, run: async () => {
+      const r = await cdp('Runtime.evaluate', { expression: inFrame(js), returnByValue: true })
+      console.log(`eval@${t}`, JSON.stringify(r.result.value))
+    } })
+  }
   for (const [f, t] of shots) {
     events.push({ t, run: async () => {
       const s = await cdp('Page.captureScreenshot', { format: 'png' })
@@ -190,6 +231,9 @@ async function main() {
   const shot = await cdp('Page.captureScreenshot', { format: 'png' })
   writeFileSync(out, Buffer.from(shot.data, 'base64'))
   console.log('wrote', out)
+
+  const errs = await cdp('Runtime.evaluate', { expression: inFrame('JSON.stringify(w.__errs || [])'), returnByValue: true })
+  console.log('--- game frame errors ---', errs.result.value)
 
   // Pull anything the host logged, for the protocol trail.
   const log = await cdp('Runtime.evaluate', {
