@@ -162,17 +162,9 @@ export function logo(scene: Phaser.Scene, width: number): Phaser.GameObjects.Ima
   return img
 }
 
-/**
- * A medal at a given height. Unearned medals sit dark — the same shape as a
- * silhouette, so the ladder reads as three slots with some lit.
- */
+/** A medal at a given height. */
 export function medal(scene: Phaser.Scene, tier: MedalTier, height: number): Phaser.GameObjects.Image {
   const img = scene.add.image(0, 0, `medal-${tier}`)
   img.setScale(height / img.height)
   return img
-}
-
-export function setMedalEarned(img: Phaser.GameObjects.Image, earned: boolean): void {
-  if (earned) img.clearTint().setAlpha(1)
-  else img.setTint(0x2a3140).setAlpha(0.7)
 }

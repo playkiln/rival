@@ -2,7 +2,7 @@ import Phaser from 'phaser'
 import type { SessionEndResult, SessionStartContext } from '../host/GameHost'
 import { GameAudio } from './GameAudio'
 import type { MedalKey } from './ghosts'
-import { MEDAL_ORDER, applyLap, createProgress, rivalFor, type Progress, type Rival } from './progress'
+import { applyLap, createProgress, rivalFor, type Progress, type Rival } from './progress'
 import { DEFAULT_CAR, copyCar, createCar, stepCar, type CarParams, type CarState } from './sim/car'
 import { decide, type Skill } from './sim/driver'
 import { makeGhost, type Ghost } from './sim/ghost'
@@ -31,7 +31,6 @@ import {
   medal,
   panelFrame,
   queueUiAssets,
-  setMedalEarned,
   settingRow,
   type Button,
   type SettingRow,
@@ -171,7 +170,6 @@ export class MainScene extends Phaser.Scene {
   private menuPanel!: Phaser.GameObjects.Container
   private menuRival!: Phaser.GameObjects.Text
   private menuBest!: Phaser.GameObjects.Text
-  private menuMedals: Phaser.GameObjects.Image[] = []
   private pausePanel!: Phaser.GameObjects.Container
   private settingsPanel!: Phaser.GameObjects.Container
   private settingsRows!: { music: SettingRow; musicVol: SettingRow; sound: SettingRow; soundVol: SettingRow }
@@ -328,7 +326,6 @@ export class MainScene extends Phaser.Scene {
     this.menuRival.setText(this.rival ? `Rival: ${this.rivalLabel()}` : '')
     this.menuRival.setColor(this.rival?.kind === 'medal' ? MEDAL_COLOR[this.rival.medal] : UI.accent)
     this.menuBest.setText(this.bestLabel())
-    MEDAL_ORDER.forEach((m, i) => setMedalEarned(this.menuMedals[i], this.progress.medals.includes(m)))
   }
 
   private startCountdown(): void {
@@ -573,23 +570,18 @@ export class MainScene extends Phaser.Scene {
       sub.setY(-92)
       const how = label(this, 'hold to turn left · release to turn right', 13, UI.dim)
       how.setY(-66)
+      // The rival line is the ladder: it names the medal you are chasing.
       this.menuRival = label(this, '', 16)
-      this.menuRival.setY(-30)
+      this.menuRival.setY(-22)
       this.menuBest = label(this, '', 14, UI.dim)
-      this.menuBest.setY(-6)
-      // The ladder: three medals, lit as they are earned. Legible after gold too.
-      this.menuMedals = MEDAL_ORDER.map((m, i) => {
-        const pip = medal(this, m, 34)
-        pip.setPosition((i - 1) * 40, 26)
-        return pip
-      })
+      this.menuBest.setY(4)
       const go = button(this, 'RACE', 220, 46, () => this.startCountdown(), true)
       go.container.setY(66)
       const settings = button(this, 'SETTINGS', 220, 38, () => this.openSettings('menu'))
       settings.container.setY(116)
       const key = label(this, 'or press space', 12, UI.dim)
       key.setY(150)
-      this.menuPanel = panel([title, sub, how, this.menuRival, this.menuBest, ...this.menuMedals, go.container, settings.container, key])
+      this.menuPanel = panel([title, sub, how, this.menuRival, this.menuBest, go.container, settings.container, key])
     }
 
     // Pause.
