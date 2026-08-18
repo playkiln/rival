@@ -34,6 +34,11 @@ Claude picks them up from there: trims/transcodes music, keys out
 backgrounds, slices sheets, moves finished assets into `public/assets/`, and
 wires them in. Raw inbox files are committed so anything can be re-derived.
 
+**[`asset-inbox/PROMPTS.md`](../asset-inbox/PROMPTS.md) is the copy-paste
+sheet for the generation sittings** — every Suno and Grok prompt in full,
+self-contained, with the tool settings and the reject criteria. Use it at the
+keyboard; the task files below explain why each asset exists.
+
 ## What is different from Snake (do not copy blindly)
 
 1. **Preferences live in the save document, not `localStorage`.** Rival has
