@@ -20,6 +20,7 @@ import {
   SAVE_FORMAT_VERSION,
 } from '../src/game/progress'
 import { MEDAL_GHOSTS } from '../src/game/ghosts'
+import { DEFAULT_PREFERENCES } from '../src/game/settings'
 import { decodeLap, encodeLap, type LapRecording } from '../src/game/sim/recording'
 
 /** A real lap to save: the bronze ghost, which is a genuine recorded lap. */
@@ -75,7 +76,8 @@ test('nothing malformed breaks the game — every bad shape reads as absent', ()
     'null',
     '[]',
     '"a string"',
-    doc({ v: 2 }), // a version from a future Rival
+    doc({ v: 3 }), // a version from a future Rival
+    doc({ v: 0 }),
     doc({ v: '1' }), // right number, wrong type
     doc({ bestMs: 26000, ghost: 'not a lap' }), // ghost will not decode
     doc({ bestMs: 26000, ghost: null }), // a time with no lap to race
@@ -84,6 +86,34 @@ test('nothing malformed breaks the game — every bad shape reads as absent', ()
   for (const text of bad) {
     assert.equal(parseProgress(text), null, `should not have parsed: ${text.slice(0, 60)}`)
   }
+})
+
+test('a v1 document reads as v2 with default preferences — the upgrade costs nobody their best', () => {
+  // Exactly what Rival 1.0 wrote: no prefs block at all.
+  const v1 = JSON.stringify({ v: 1, bestMs: 26000, ghost: encodeLap(lap), medals: ['bronze'] })
+  const back = parseProgress(v1)
+  assert.ok(back, 'a v1 document must never be treated as absent')
+  assert.equal(back.bestMs, 26000)
+  assert.deepEqual(back.medals, ['bronze'])
+  assert.deepEqual(back.prefs, DEFAULT_PREFERENCES)
+  // And it is rewritten as the current version on the next save.
+  assert.equal(JSON.parse(JSON.stringify(serialiseProgress(back))).v, SAVE_FORMAT_VERSION)
+})
+
+test('preferences round-trip, and odd values degrade field by field', () => {
+  const p = progressWithBest(26000)
+  p.prefs = { musicEnabled: false, musicVolume: 0.2, soundEnabled: true, soundVolume: 1 }
+  const back = parseProgress(JSON.stringify(serialiseProgress(p)))
+  assert.deepEqual(back?.prefs, p.prefs)
+
+  const odd = parseProgress(doc({ prefs: { musicEnabled: 'yes', musicVolume: 7, soundVolume: -1 } }))
+  assert.ok(odd)
+  assert.equal(odd.prefs.musicEnabled, true)
+  assert.equal(odd.prefs.musicVolume, 1)
+  assert.equal(odd.prefs.soundVolume, 0)
+  assert.equal(odd.prefs.soundEnabled, true)
+
+  assert.deepEqual(parseProgress(doc({ prefs: 'loud' }))?.prefs, DEFAULT_PREFERENCES)
 })
 
 test('an unusable best degrades to no best rather than to a corrupt save', () => {

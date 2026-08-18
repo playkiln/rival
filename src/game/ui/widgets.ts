@@ -80,6 +80,30 @@ export function button(
   }
 }
 
+export type SettingRow = {
+  container: Phaser.GameObjects.Container
+  setValue(text: string): void
+}
+
+/**
+ * One settings row: a label on the left, a small cycling value button on the
+ * right. Cycling — not sliding — because it works identically on touch and
+ * needs no drag handling, and the values are few enough to tap through.
+ */
+export function settingRow(scene: Phaser.Scene, name: string, width: number, onCycle: () => void): SettingRow {
+  const t = label(scene, name, 15, UI.dim, 'left')
+  t.setX(-width / 2)
+  const value = button(scene, '', 96, 32, onCycle)
+  value.container.setX(width / 2 - 48)
+  const container = scene.add.container(0, 0, [t, value.container])
+  return {
+    container,
+    setValue(s: string) {
+      value.setLabel(s)
+    },
+  }
+}
+
 /** Rounded backdrop for a panel, centred on its container. */
 export function backdrop(scene: Phaser.Scene, width: number, height: number): Phaser.GameObjects.Graphics {
   const g = scene.add.graphics()

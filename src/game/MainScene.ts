@@ -1,7 +1,7 @@
 import Phaser from 'phaser'
 import type { SessionEndResult, SessionStartContext } from '../host/GameHost'
 import type { MedalKey } from './ghosts'
-import { applyLap, createProgress, rivalFor, type Progress, type Rival } from './progress'
+import { MEDAL_ORDER, applyLap, createProgress, rivalFor, type Progress, type Rival } from './progress'
 import { DEFAULT_CAR, copyCar, createCar, stepCar, type CarParams, type CarState } from './sim/car'
 import { decide, type Skill } from './sim/driver'
 import { makeGhost, type Ghost } from './sim/ghost'
@@ -16,10 +16,11 @@ import {
   type Pose,
   type Recorder,
 } from './sim/recording'
+import { nextVolume, volumeLabel } from './settings'
 import { buildTrack, type Track } from './sim/track'
 import { CAR_LENGTH, CAR_WIDTH, COLORS, drawTrack, makeCarTexture } from './TrackRenderer'
 import { TRACK } from './track-data'
-import { UI, backdrop, button, label, type Button } from './ui/widgets'
+import { UI, backdrop, button, label, settingRow, type Button, type SettingRow } from './ui/widgets'
 
 export type { SessionEndResult, SessionStartContext }
 
@@ -32,6 +33,11 @@ const COUNTDOWN_FRAMES = 90
 const RESUME_MS = 750
 /** Depth reserved for HUD objects; the camera split keys off it. */
 const HUD_DEPTH = 20
+/** One footprint for every panel, so a single frame image can dress them all. */
+const PANEL_W = 360
+const PANEL_H = 340
+/** The end screen's primary is inert this long after it appears, so mashing the turn key at the line cannot skip the result unseen. */
+const END_GUARD_MS = 400
 
 const MEDAL_LABEL: Record<MedalKey, string> = { bronze: 'BRONZE', silver: 'SILVER', gold: 'GOLD' }
 const MEDAL_COLOR: Record<MedalKey, string> = { bronze: UI.bronze, silver: UI.silver, gold: UI.gold }
@@ -52,6 +58,8 @@ function devFlag(name: string): boolean {
 const AUTODRIVE_SKILL: Skill = { look: 90, every: 4, wander: 0, wanderPeriod: 2 }
 
 type State = 'idle' | 'menu' | 'countdown' | 'racing' | 'finished'
+/** Why the next session was asked for — decides whether it lands on the menu or straight on the grid. */
+type Intent = 'menu' | 'race'
 
 function formatMs(ms: number): string {
   const total = Math.max(0, Math.round(ms))
@@ -76,8 +84,12 @@ function lerpAngle(a: number, b: number, t: number): number {
 /**
  * Rival — one lap per session, raced against a ghost.
  *
- *   session.start → (attempt 1: start screen) → countdown → racing → finish
- *   → sessionEnd → end screen → "race again" → requestNewSession → session.start
+ *   session.start → main menu → countdown → racing → finish → sessionEnd
+ *   → end screen → "race again" → requestNewSession → session.start → countdown
+ *
+ * Whether a session lands on the menu or on the grid is decided by the intent
+ * left behind when it was requested, never by the host's attempt counter: the
+ * player can always get back to the menu, on any attempt.
  *
  * The scene knows nothing about postMessage: it is driven through
  * beginSession / abortSession and reports through the end/replay handlers.
@@ -104,6 +116,10 @@ export class MainScene extends Phaser.Scene {
 
   private state: State = 'idle'
   private paused = false
+  private nextIntent: Intent = 'menu'
+  private settingsOpen = false
+  private settingsReturn: 'menu' | 'pause' = 'menu'
+  private endReadyAt = 0
   private resumeGraceMs = 0
   private frame = 0
   private goFrame = 0
@@ -136,7 +152,10 @@ export class MainScene extends Phaser.Scene {
   private menuPanel!: Phaser.GameObjects.Container
   private menuRival!: Phaser.GameObjects.Text
   private menuBest!: Phaser.GameObjects.Text
+  private menuMedals: Phaser.GameObjects.Text[] = []
   private pausePanel!: Phaser.GameObjects.Container
+  private settingsPanel!: Phaser.GameObjects.Container
+  private settingsRows!: { music: SettingRow; musicVol: SettingRow; sound: SettingRow; soundVol: SettingRow }
   private endPanel!: Phaser.GameObjects.Container
   private endTitle!: Phaser.GameObjects.Text
   private endTime!: Phaser.GameObjects.Text
@@ -168,7 +187,7 @@ export class MainScene extends Phaser.Scene {
   setProgress(progress: Progress): void {
     this.progress = progress
     // The scene may not have run create() yet; showMenu() paints this anyway.
-    if (this.menuBest) this.menuBest.setText(this.bestLabel())
+    if (this.menuBest) this.paintMenu()
   }
 
   setSaveHandler(handler: (progress: Progress) => void): void {
@@ -218,8 +237,10 @@ export class MainScene extends Phaser.Scene {
     this.hudRival.setText(`RIVAL ${this.rivalLabel()}`)
     this.hudRival.setColor(this.rival.kind === 'medal' ? MEDAL_COLOR[this.rival.medal] : UI.accent)
     this.hidePanels()
-    if (ctx.attempt === 1) this.showMenu()
-    else this.startCountdown()
+    const intent = this.nextIntent
+    this.nextIntent = 'menu'
+    if (intent === 'race') this.startCountdown()
+    else this.showMenu()
   }
 
   abortSession(): void {
@@ -262,14 +283,23 @@ export class MainScene extends Phaser.Scene {
 
   private showMenu(): void {
     this.state = 'menu'
-    this.menuRival.setText(`Rival: ${this.rivalLabel()}`)
-    this.menuRival.setColor(this.rival?.kind === 'medal' ? MEDAL_COLOR[this.rival.medal] : UI.accent)
-    this.menuBest.setText(this.bestLabel())
+    this.paintMenu()
     this.dim.setVisible(true)
     this.menuPanel.setVisible(true)
     this.hudHint.setText('')
     this.pauseButton.container.setVisible(false)
     this.showMessage('', 0)
+  }
+
+  /** Rival, best and ladder — everything on the menu that progress can change. */
+  private paintMenu(): void {
+    this.menuRival.setText(this.rival ? `Rival: ${this.rivalLabel()}` : '')
+    this.menuRival.setColor(this.rival?.kind === 'medal' ? MEDAL_COLOR[this.rival.medal] : UI.accent)
+    this.menuBest.setText(this.bestLabel())
+    MEDAL_ORDER.forEach((m, i) => {
+      const earned = this.progress.medals.includes(m)
+      this.menuMedals[i].setText(earned ? '●' : '○').setColor(earned ? MEDAL_COLOR[m] : UI.dim)
+    })
   }
 
   private startCountdown(): void {
@@ -347,11 +377,20 @@ export class MainScene extends Phaser.Scene {
     }
     this.dim.setVisible(true)
     this.endPanel.setVisible(true)
+    this.endReadyAt = this.time.now + END_GUARD_MS
   }
 
-  private requestReplay(): void {
-    // Fire-and-forget: the host answers with a fresh session.start.
+  /** Ask for the next session. Fire-and-forget: the host answers with a fresh session.start, which lands where `intent` says. */
+  private requestReplay(intent: Intent): void {
+    this.nextIntent = intent
     this.replayHandler?.()
+  }
+
+  /** The end screen's RACE AGAIN, behind the short guard against a mashed finish. */
+  private raceAgain(): void {
+    if (this.state !== 'finished' || !this.endPanel.visible) return
+    if (this.time.now < this.endReadyAt) return
+    this.requestReplay('race')
   }
 
   // ------------------------------------------------------------------ pause
@@ -367,6 +406,8 @@ export class MainScene extends Phaser.Scene {
 
   private resumeRun(): void {
     if (!this.paused) return
+    this.settingsOpen = false
+    this.settingsPanel.setVisible(false)
     this.paused = false
     this.pointerHeld = 0
     this.resumeGraceMs = RESUME_MS
@@ -376,8 +417,11 @@ export class MainScene extends Phaser.Scene {
     this.pauseButton.container.setVisible(true)
   }
 
-  /** From pause: end this session honestly as a quit, then ask for a fresh one. */
-  private restartRun(): void {
+  /**
+   * From pause: end this session honestly as a quit, then ask for a fresh one
+   * — straight back onto the grid (RESTART) or to the menu (MAIN MENU).
+   */
+  private quitRun(intent: Intent): void {
     if (!this.paused || !this.sessionId) return
     const result: SessionEndResult = {
       sessionId: this.sessionId,
@@ -389,7 +433,44 @@ export class MainScene extends Phaser.Scene {
     this.paused = false
     this.hidePanels()
     this.endHandler?.(result)
-    this.requestReplay()
+    this.requestReplay(intent)
+  }
+
+  // --------------------------------------------------------------- settings
+
+  private openSettings(from: 'menu' | 'pause'): void {
+    this.settingsOpen = true
+    this.settingsReturn = from
+    this.paintSettings()
+    this.menuPanel.setVisible(false)
+    this.pausePanel.setVisible(false)
+    this.settingsPanel.setVisible(true)
+  }
+
+  private closeSettings(): void {
+    if (!this.settingsOpen) return
+    this.settingsOpen = false
+    this.settingsPanel.setVisible(false)
+    if (this.settingsReturn === 'pause' && this.paused) this.pausePanel.setVisible(true)
+    else if (this.state === 'menu') this.menuPanel.setVisible(true)
+  }
+
+  private paintSettings(): void {
+    const p = this.progress.prefs
+    this.settingsRows.music.setValue(p.musicEnabled ? 'ON' : 'OFF')
+    this.settingsRows.musicVol.setValue(volumeLabel(p.musicVolume))
+    this.settingsRows.sound.setValue(p.soundEnabled ? 'ON' : 'OFF')
+    this.settingsRows.soundVol.setValue(volumeLabel(p.soundVolume))
+  }
+
+  /**
+   * A preference changed. Persisted at once — it is a rare, deliberate act,
+   * not a per-lap write — and it travels in the same document as the best lap.
+   */
+  private changePrefs(mutate: (p: Progress['prefs']) => void): void {
+    mutate(this.progress.prefs)
+    this.paintSettings()
+    this.saveHandler?.(this.progress)
   }
 
   // -------------------------------------------------------------------- HUD
@@ -408,79 +489,121 @@ export class MainScene extends Phaser.Scene {
 
   private createPanels(): void {
     this.dim = this.add.rectangle(0, 0, 10, 10, 0x000000, 0.45).setOrigin(0).setDepth(HUD_DEPTH).setVisible(false)
-
-    // Start screen (first attempt only).
-    {
-      const title = label(this, 'RIVAL', 44, UI.accent)
-      title.setY(-96)
-      const sub = label(this, 'one lap · one input', 15, UI.dim)
-      sub.setY(-58)
-      const how = label(this, 'hold to turn left\nrelease to turn right', 16)
-      how.setY(-14)
-      this.menuRival = label(this, '', 16)
-      this.menuRival.setY(34)
-      this.menuBest = label(this, '', 14, UI.dim)
-      this.menuBest.setY(58)
-      const go = button(this, 'START', 200, 46, () => this.startCountdown(), true)
-      go.container.setY(104)
-      const key = label(this, 'or press space', 12, UI.dim)
-      key.setY(140)
-      this.menuPanel = this.add
-        .container(0, 0, [backdrop(this, 340, 320), title, sub, how, this.menuRival, this.menuBest, go.container, key])
+    const panel = (items: Phaser.GameObjects.GameObject[]): Phaser.GameObjects.Container =>
+      this.add
+        .container(0, 0, [backdrop(this, PANEL_W, PANEL_H), ...items])
         .setDepth(HUD_DEPTH)
         .setVisible(false)
+
+    // Main menu: who you race, what you hold, and the way in.
+    {
+      const title = label(this, 'RIVAL', 44, UI.accent)
+      title.setY(-128)
+      const sub = label(this, 'one lap · one input', 15, UI.dim)
+      sub.setY(-92)
+      const how = label(this, 'hold to turn left · release to turn right', 13, UI.dim)
+      how.setY(-66)
+      this.menuRival = label(this, '', 16)
+      this.menuRival.setY(-30)
+      this.menuBest = label(this, '', 14, UI.dim)
+      this.menuBest.setY(-6)
+      // The ladder: three pips, lit as they are earned. Legible after gold too.
+      this.menuMedals = MEDAL_ORDER.map((_, i) => {
+        const pip = label(this, '○', 18, UI.dim)
+        pip.setPosition((i - 1) * 28, 22)
+        return pip
+      })
+      const go = button(this, 'RACE', 220, 46, () => this.startCountdown(), true)
+      go.container.setY(66)
+      const settings = button(this, 'SETTINGS', 220, 38, () => this.openSettings('menu'))
+      settings.container.setY(116)
+      const key = label(this, 'or press space', 12, UI.dim)
+      key.setY(150)
+      this.menuPanel = panel([title, sub, how, this.menuRival, this.menuBest, ...this.menuMedals, go.container, settings.container, key])
     }
 
     // Pause.
     {
       const title = label(this, 'PAUSED', 26)
-      title.setY(-64)
-      const resume = button(this, 'RESUME', 200, 44, () => this.resumeRun(), true)
-      resume.container.setY(-6)
-      const restart = button(this, 'RESTART', 200, 40, () => this.restartRun())
-      restart.container.setY(50)
-      this.pausePanel = this.add
-        .container(0, 0, [backdrop(this, 300, 200), title, resume.container, restart.container])
-        .setDepth(HUD_DEPTH)
-        .setVisible(false)
+      title.setY(-118)
+      const resume = button(this, 'RESUME', 220, 46, () => this.resumeRun(), true)
+      resume.container.setY(-52)
+      const restart = button(this, 'RESTART', 220, 38, () => this.quitRun('race'))
+      restart.container.setY(2)
+      const settings = button(this, 'SETTINGS', 220, 38, () => this.openSettings('pause'))
+      settings.container.setY(50)
+      const menu = button(this, 'MAIN MENU', 220, 38, () => this.quitRun('menu'))
+      menu.container.setY(98)
+      this.pausePanel = panel([title, resume.container, restart.container, settings.container, menu.container])
     }
 
-    // End screen: lap time, delta to the ghost, medal, retry.
+    // Settings: audio only. Nothing here may change what a lap time means.
+    {
+      const title = label(this, 'SETTINGS', 26)
+      title.setY(-118)
+      const rowW = 280
+      const music = settingRow(this, 'MUSIC', rowW, () => this.changePrefs((p) => (p.musicEnabled = !p.musicEnabled)))
+      music.container.setY(-58)
+      const musicVol = settingRow(this, 'MUSIC VOLUME', rowW, () =>
+        this.changePrefs((p) => (p.musicVolume = nextVolume(p.musicVolume))),
+      )
+      musicVol.container.setY(-16)
+      const sound = settingRow(this, 'SOUND', rowW, () => this.changePrefs((p) => (p.soundEnabled = !p.soundEnabled)))
+      sound.container.setY(26)
+      const soundVol = settingRow(this, 'SOUND VOLUME', rowW, () =>
+        this.changePrefs((p) => (p.soundVolume = nextVolume(p.soundVolume))),
+      )
+      soundVol.container.setY(68)
+      this.settingsRows = { music, musicVol, sound, soundVol }
+      const back = button(this, 'BACK', 220, 40, () => this.closeSettings(), true)
+      back.container.setY(124)
+      this.settingsPanel = panel([
+        title,
+        music.container,
+        musicVol.container,
+        sound.container,
+        soundVol.container,
+        back.container,
+      ])
+    }
+
+    // End screen: lap time, delta to the ghost, medal, retry — and the way back.
     {
       this.endTitle = label(this, '', 24)
-      this.endTitle.setY(-108)
+      this.endTitle.setY(-122)
       this.endTime = label(this, '', 40)
-      this.endTime.setY(-62)
+      this.endTime.setY(-76)
       this.endDelta = label(this, '', 17)
-      this.endDelta.setY(-20)
+      this.endDelta.setY(-34)
       this.endMedal = label(this, '', 20)
-      this.endMedal.setY(14)
+      this.endMedal.setY(0)
       this.endNext = label(this, '', 13, UI.dim)
-      this.endNext.setY(46)
-      this.endButton = button(this, 'RACE AGAIN', 220, 46, () => this.requestReplay(), true)
-      this.endButton.container.setY(100)
+      this.endNext.setY(32)
+      this.endButton = button(this, 'RACE AGAIN', 220, 46, () => this.raceAgain(), true)
+      this.endButton.container.setY(84)
+      const menu = button(this, 'MENU', 220, 34, () => this.requestReplay('menu'))
+      menu.container.setY(128)
       const key = label(this, 'or press space', 12, UI.dim)
-      key.setY(136)
-      this.endPanel = this.add
-        .container(0, 0, [
-          backdrop(this, 360, 316),
-          this.endTitle,
-          this.endTime,
-          this.endDelta,
-          this.endMedal,
-          this.endNext,
-          this.endButton.container,
-          key,
-        ])
-        .setDepth(HUD_DEPTH)
-        .setVisible(false)
+      key.setY(158)
+      this.endPanel = panel([
+        this.endTitle,
+        this.endTime,
+        this.endDelta,
+        this.endMedal,
+        this.endNext,
+        this.endButton.container,
+        menu.container,
+        key,
+      ])
     }
   }
 
   private hidePanels(): void {
+    this.settingsOpen = false
     this.dim.setVisible(false)
     this.menuPanel.setVisible(false)
     this.pausePanel.setVisible(false)
+    this.settingsPanel.setVisible(false)
     this.endPanel.setVisible(false)
   }
 
@@ -512,15 +635,11 @@ export class MainScene extends Phaser.Scene {
     this.hudHint.setPosition(w / 2, h - 14)
     this.pauseButton.container.setPosition(w - 36, 28)
     this.dim.setSize(w, h)
-    const cy = h / 2
-    this.menuPanel.setPosition(w / 2, cy)
-    this.pausePanel.setPosition(w / 2, cy)
-    this.endPanel.setPosition(w / 2, cy)
     // Small screens: scale panels down rather than clip.
-    const ps = Phaser.Math.Clamp(Math.min(w / 380, h / 360), 0.6, 1)
-    this.menuPanel.setScale(ps)
-    this.pausePanel.setScale(ps)
-    this.endPanel.setScale(ps)
+    const ps = Phaser.Math.Clamp(Math.min(w / (PANEL_W + 20), h / (PANEL_H + 20)), 0.6, 1)
+    for (const panel of [this.menuPanel, this.pausePanel, this.settingsPanel, this.endPanel]) {
+      panel.setPosition(w / 2, h / 2).setScale(ps)
+    }
   }
 
   // ------------------------------------------------------------------ input
@@ -530,7 +649,8 @@ export class MainScene extends Phaser.Scene {
     this.input.mouse?.disableContextMenu()
     this.input.on('pointerdown', () => {
       if (this.state === 'menu') {
-        this.startCountdown()
+        // Tap anywhere to race — but not through the settings panel.
+        if (!this.settingsOpen) this.startCountdown()
         return
       }
       this.pointerHeld += 1
@@ -564,13 +684,16 @@ export class MainScene extends Phaser.Scene {
   }
 
   private primaryAction(): void {
+    if (this.settingsOpen) return
     if (this.paused) this.resumeRun()
     else if (this.state === 'menu') this.startCountdown()
-    else if (this.state === 'finished' && this.endPanel.visible) this.requestReplay()
+    else if (this.state === 'finished') this.raceAgain()
   }
 
+  /** Esc / P: back out of settings, otherwise pause or resume. */
   private togglePause(): void {
-    if (this.paused) this.resumeRun()
+    if (this.settingsOpen) this.closeSettings()
+    else if (this.paused) this.resumeRun()
     else this.pauseRun()
   }
 
