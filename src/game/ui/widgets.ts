@@ -144,9 +144,9 @@ export function panelFrame(scene: Phaser.Scene, width: number, height: number): 
   return scene.add.nineslice(0, 0, ART.panel.key, undefined, width * 2, height * 2, i, i, i, i).setScale(0.5)
 }
 
-/** The scenery behind the menu, settings and end panels: cover-fitted to the viewport by `layout`. */
+/** The scenery behind the menu, settings and end panels: cover-fitted to the viewport by `layout`, opaque so the world does not bleed through. */
 export function backdropImage(scene: Phaser.Scene): Phaser.GameObjects.Image {
-  return scene.add.image(0, 0, ART.backdrop.key).setAlpha(0.9)
+  return scene.add.image(0, 0, ART.backdrop.key)
 }
 
 /** Cover-fit an image to a box: fills it, cropping the long side. */
