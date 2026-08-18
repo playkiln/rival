@@ -7,20 +7,20 @@ touch and on keyboard. Speed is constant; the skill is the racing line.
 Your best lap comes back as a **ghost** you race. A time tells you *that* you
 were slower. A ghost tells you *where*.
 
-> **Status: in development.** This repository is the source as it is being
-> built. Rival is not live yet.
+> **Status: complete and being published.** Stages 1–3 and the polish
+> roadmap (menus, audio, art) are done; the package validates clean.
 
 ## Built against
 
 Per [`docs/versioning.md`](https://playkiln.com) §7, a published game records the
-versions it shipped against. These are the versions at scaffold time and will be
-updated at release:
+versions it shipped against. These are the versions Rival was built and
+published against:
 
 | Field | Value |
 | --- | --- |
 | Protocol | 1 (`minSdkVersion: 1`) |
-| SDK | `@playkiln/game-sdk` 1.0.0, vendored into `public/playkiln-sdk.js` |
-| CLI | `@playkiln/cli` 1.2.0 |
+| SDK | `@playkiln/game-sdk` 1.1.0, vendored into `public/playkiln-sdk.js` |
+| CLI | `@playkiln/cli` 1.3.1 |
 | Capabilities | `storage`, `audio` (declared at runtime in `init`, both honoured) |
 
 ## Not maintained forward
