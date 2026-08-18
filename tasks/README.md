@@ -9,8 +9,8 @@ art only.
 | # | Task | Depends on | Who does what |
 |---|------|-----------|----------------|
 | 1 | [Menus & flow](01-menus.md) | — | Claude codes it all |
-| 2 | [Audio](02-audio.md) | Task 1 (Settings panel) | Gerard makes music on Suno, Claude synthesizes SFX + integrates |
-| 3 | [Art](03-art.md) | Task 1 (final layouts) | Gerard generates images on Grok, Claude keys/slices/integrates |
+| 2 | [Audio](02-audio.md) | Task 1 (Settings panel) | The builder makes music on Suno, Claude synthesizes SFX + integrates |
+| 3 | [Art](03-art.md) | Task 1 (final layouts) | The builder generates images on Grok, Claude keys/slices/integrates |
 
 ## Why this order
 

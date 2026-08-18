@@ -3,9 +3,10 @@
 The standing instructions for building Rival. Pointing an assistant at this file
 is the same as typing the active prompt below.
 
-**Do only what is under "Active now."** Everything under "Later" is triggered by
-Gerard saying so, never by reading this file. If you have just been handed this
-file and nothing else, the active prompt is the one and only thing to act on.
+**Do only what is under "Active now."** Everything under "Later" is triggered
+by the builder saying so, never by reading this file. If you have just been
+handed this file and nothing else, the active prompt is the one and only thing
+to act on.
 
 ---
 
@@ -43,7 +44,7 @@ Name the corner, name what the car did, name what you expected instead.
 
 ---
 
-## Later — only when Gerard says so
+## Later — only when the builder says so
 
 **When Stage 1 is called done**
 

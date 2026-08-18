@@ -4,9 +4,9 @@
 consistent night-race style — car, tarmac, infield, panel frames, buttons,
 medals, menu backdrop and a real store card.
 
-**Owners:** Gerard generates on Grok following the guide below. Claude keys
-out backgrounds, slices sheets, integrates (nine-slice frames, tile sprites,
-sprite rotation) and rebuilds the store card pipeline.
+**Owners:** The builder generates on Grok following the guide below. Claude
+keys out backgrounds, slices sheets, integrates (nine-slice frames, tile
+sprites, sprite rotation) and rebuilds the store card pipeline.
 
 **Depends on:** Task 1 (final panel footprint, 360×340).
 

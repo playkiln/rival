@@ -1,9 +1,9 @@
 # Rival — asset generation prompts
 
-Everything Gerard needs to generate, in copy-paste form. Two tables: **music
-(Suno)** and **images (Grok)**. Each prompt below is **self-contained** — click
-the copy button on the code block, paste it into the tool, generate. Nothing
-needs to be assembled by hand.
+Everything the builder needs to generate, in copy-paste form. Two tables:
+**music (Suno)** and **images (Grok)**. Each prompt below is
+**self-contained** — click the copy button on the code block, paste it into the
+tool, generate. Nothing needs to be assembled by hand.
 
 Task detail lives in [`tasks/02-audio.md`](../tasks/02-audio.md) and
 [`tasks/03-art.md`](../tasks/03-art.md); this file is the working copy for the

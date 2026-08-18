@@ -4,15 +4,15 @@
 a sound for every meaningful event — behind persisted toggles, volume
 controls, and the platform's mute-all button.
 
-**Owners:** Gerard delivers 4 tracks from Suno. Claude synthesizes all SFX
-locally (script-generated, licence-clean), transcodes everything, and does all
-integration.
+**Owners:** The builder delivers 4 tracks from Suno. Claude synthesizes all
+SFX locally (script-generated, licence-clean), transcodes everything, and does
+all integration.
 
 **Depends on:** Task 1 (the Settings panel and the `Preferences` split).
 
 ---
 
-## Part A — Music: what Gerard delivers
+## Part A — Music: what the builder delivers
 
 Drop files into `asset-inbox/music/` with exactly these names (wav/mp3/m4a —
 highest quality Suno offers, WAV preferred):
