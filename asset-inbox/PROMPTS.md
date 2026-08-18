@@ -169,8 +169,8 @@ silence — there is nothing to cut out of it.
 
 ### What "too detailed" means here, concretely
 
-The car is 38×20 world units and the camera zoom clamps at 0.7–1.5, so **the
-car sprite is never more than about 57 px long on screen** — smaller than the
+The car is 57×30 world units and the camera zoom clamps at 0.7–1.5, so **the
+car sprite is never more than about 86 px long on screen** — smaller than the
 thumbnail Grok shows you. Same story for the medals and the button ornament.
 Before accepting a candidate, shrink the preview to the size of a fingernail.
 If it stops reading, reroll.

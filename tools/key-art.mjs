@@ -121,10 +121,10 @@ async function writePng(pipeline, name) {
 
 // ------------------------------------------------------------------ keyed
 
-/** The car: faces right, rotated in code. Sized for ~3× its largest on-screen length. */
+/** The car: faces right, rotated in code. Sized for ~2× its largest on-screen length, so it stays crisp on dense screens. */
 async function car() {
   const k = await keyed('car.jpg')
-  const s = await writePng(k.image.resize({ width: 144 }), 'car.png')
+  const s = await writePng(k.image.resize({ width: 200 }), 'car.png')
   report('car.png', `${s}  key ${k.key}, ${k.fringe} edge px un-mixed, ${k.spill} despilled`)
 }
 

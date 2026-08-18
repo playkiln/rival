@@ -23,8 +23,8 @@ cannot be made to line up with the simulation.
 
 ## The three failure modes we are pre-empting
 
-1. **Mud at small sizes.** The car is 38×20 world units and the camera zoom
-   clamps at 0.7–1.5, so the car sprite is never more than ~57 px long. Flat,
+1. **Mud at small sizes.** The car is 57×30 world units and the camera zoom
+   clamps at 0.7–1.5, so the car sprite is never more than ~86 px long. Flat,
    bold, high-contrast, minimal detail.
 2. **Style drift across assets.** Every prompt starts with the same STYLE
    GUIDE block, related assets are generated in one sheet, and everything is

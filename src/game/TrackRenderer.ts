@@ -2,8 +2,8 @@ import Phaser from 'phaser'
 import { pointAt, type Track } from './sim/track'
 
 /** World-unit sizes shared by the renderer and the scene. */
-export const CAR_LENGTH = 38
-export const CAR_WIDTH = 20
+export const CAR_LENGTH = 57
+export const CAR_WIDTH = 30
 /** Border and kerb bands sit flush against the surface edge and extend outward. */
 const BORDER_W = 6
 const KERB_W = 14
