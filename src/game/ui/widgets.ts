@@ -9,12 +9,35 @@ export const UI = {
   accentHex: 0xffb347,
   good: '#7ee0a0',
   bad: '#ff8fa0',
-  panel: 0x141821,
-  panelStroke: 0x2a3140,
   bronze: '#d19a66',
   silver: '#c9d1dc',
   gold: '#ffd166',
 } as const
+
+/**
+ * The UI art. Frames are nine-sliced from images generated at 2× and drawn
+ * at half scale, so the corner brackets keep their proportion on any panel
+ * and stay crisp on dense screens. Insets are the ones tools/key-art.mjs
+ * printed for the source images.
+ */
+const ART = {
+  panel: { key: 'panel-frame', file: 'assets/art/panel-frame.png', inset: 72 },
+  button: { key: 'button-frame', file: 'assets/art/button-frame.png', insetX: 64, insetY: 16 },
+  backdrop: { key: 'backdrop', file: 'assets/art/backdrop.jpg' },
+  logo: { key: 'logo', file: 'assets/art/logo.png' },
+  medals: { bronze: 'assets/art/medal-bronze.png', silver: 'assets/art/medal-silver.png', gold: 'assets/art/medal-gold.png' },
+} as const
+
+export type MedalTier = keyof typeof ART.medals
+
+/** Queue every UI image. */
+export function queueUiAssets(load: Phaser.Loader.LoaderPlugin): void {
+  load.image(ART.panel.key, ART.panel.file)
+  load.image(ART.button.key, ART.button.file)
+  load.image(ART.backdrop.key, ART.backdrop.file)
+  load.image(ART.logo.key, ART.logo.file)
+  for (const [tier, file] of Object.entries(ART.medals)) load.image(`medal-${tier}`, file)
+}
 
 export function label(
   scene: Phaser.Scene,
@@ -36,6 +59,10 @@ export type Button = {
 /**
  * A tappable button. The press is swallowed (stopPropagation) so it never
  * reaches the scene's turn input — the whole canvas is otherwise "hold".
+ *
+ * One frame image serves every button; the primary state is an accent fill
+ * laid inside the frame and the hover state a light wash over it, both drawn
+ * in code, so the states can never drift from each other.
  */
 export function button(
   scene: Phaser.Scene,
@@ -46,18 +73,21 @@ export function button(
   primary = false,
   silent = false,
 ): Button {
-  const bg = scene.add.graphics()
+  const frame = scene.add
+    .nineslice(0, 0, ART.button.key, undefined, width * 2, height * 2, ART.button.insetX, ART.button.insetX, ART.button.insetY, ART.button.insetY)
+    .setScale(0.5)
+  const state = scene.add.graphics()
   const draw = (hover: boolean): void => {
-    bg.clear()
+    state.clear()
+    // Inside the frame's border, above its amber underline.
+    const inset = 3
+    const r = Math.min(8, height / 2 - inset)
     if (primary) {
-      bg.fillStyle(UI.accentHex, hover ? 1 : 0.92)
-    } else {
-      bg.fillStyle(0xffffff, hover ? 0.14 : 0.08)
-    }
-    bg.fillRoundedRect(-width / 2, -height / 2, width, height, 8)
-    if (!primary) {
-      bg.lineStyle(1.5, 0xffffff, 0.25)
-      bg.strokeRoundedRect(-width / 2, -height / 2, width, height, 8)
+      state.fillStyle(UI.accentHex, hover ? 1 : 0.94)
+      state.fillRoundedRect(-width / 2 + inset, -height / 2 + inset, width - inset * 2, height - inset * 2 - 1, r)
+    } else if (hover) {
+      state.fillStyle(0xffffff, 0.1)
+      state.fillRoundedRect(-width / 2 + inset, -height / 2 + inset, width - inset * 2, height - inset * 2 - 1, r)
     }
   }
   draw(false)
@@ -74,7 +104,7 @@ export function button(
       onPress()
     },
   )
-  const container = scene.add.container(0, 0, [bg, t, zone])
+  const container = scene.add.container(0, 0, [frame, state, t, zone])
   return {
     container,
     setLabel(s: string) {
@@ -108,12 +138,41 @@ export function settingRow(scene: Phaser.Scene, name: string, width: number, onC
   }
 }
 
-/** Rounded backdrop for a panel, centred on its container. */
-export function backdrop(scene: Phaser.Scene, width: number, height: number): Phaser.GameObjects.Graphics {
-  const g = scene.add.graphics()
-  g.fillStyle(UI.panel, 0.96)
-  g.fillRoundedRect(-width / 2, -height / 2, width, height, 14)
-  g.lineStyle(2, UI.panelStroke, 1)
-  g.strokeRoundedRect(-width / 2, -height / 2, width, height, 14)
-  return g
+/** The panel frame, centred on its container. One image dresses every panel. */
+export function panelFrame(scene: Phaser.Scene, width: number, height: number): Phaser.GameObjects.NineSlice {
+  const i = ART.panel.inset
+  return scene.add.nineslice(0, 0, ART.panel.key, undefined, width * 2, height * 2, i, i, i, i).setScale(0.5)
+}
+
+/** The scenery behind the menu, settings and end panels: cover-fitted to the viewport by `layout`. */
+export function backdropImage(scene: Phaser.Scene): Phaser.GameObjects.Image {
+  return scene.add.image(0, 0, ART.backdrop.key).setAlpha(0.9)
+}
+
+/** Cover-fit an image to a box: fills it, cropping the long side. */
+export function coverFit(img: Phaser.GameObjects.Image, w: number, h: number): void {
+  const s = Math.max(w / img.width, h / img.height)
+  img.setScale(s).setPosition(w / 2, h / 2)
+}
+
+/** The wordmark, at a given width. */
+export function logo(scene: Phaser.Scene, width: number): Phaser.GameObjects.Image {
+  const img = scene.add.image(0, 0, ART.logo.key)
+  img.setScale(width / img.width)
+  return img
+}
+
+/**
+ * A medal at a given height. Unearned medals sit dark — the same shape as a
+ * silhouette, so the ladder reads as three slots with some lit.
+ */
+export function medal(scene: Phaser.Scene, tier: MedalTier, height: number): Phaser.GameObjects.Image {
+  const img = scene.add.image(0, 0, `medal-${tier}`)
+  img.setScale(height / img.height)
+  return img
+}
+
+export function setMedalEarned(img: Phaser.GameObjects.Image, earned: boolean): void {
+  if (earned) img.clearTint().setAlpha(1)
+  else img.setTint(0x2a3140).setAlpha(0.7)
 }

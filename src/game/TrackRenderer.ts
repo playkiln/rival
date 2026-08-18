@@ -10,20 +10,29 @@ const KERB_W = 14
 const KERB_STRIPE = 28
 
 export const COLORS = {
-  ground: 0x18231b,
-  groundDot: 0x27362b,
-  tarmac: 0x3b3f48,
   edge: 0xe6e8ee,
   kerb: 0xd8483f,
   checkpoint: 0x8fb0ff,
-  car: 0xffb347,
-  carNose: 0xfff1d6,
   mark: 0x1c1e24,
 } as const
+
+/** Texture keys the scene preloads for the world; see `queueWorldAssets`. */
+const TEX = { infield: 'infield', tarmac: 'tarmac', car: 'car' } as const
+
+/** Queue the world's images: two seamless surface tiles and the car. */
+export function queueWorldAssets(load: Phaser.Loader.LoaderPlugin): void {
+  load.image(TEX.infield, 'assets/art/infield.jpg')
+  load.image(TEX.tarmac, 'assets/art/tarmac.jpg')
+  load.image(TEX.car, 'assets/art/car.png')
+}
 
 /**
  * Draw the static world — ground, surface, border, kerbs, checkpoint lines,
  * start chequer — and return the skid-mark layer the scene draws into.
+ *
+ * The two surfaces are image tiles laid UNDER geometry that stays
+ * procedural: the road polygon is a mask over a tarmac tile, so the width,
+ * the borders, the kerbs and the chequer are still exact to the simulation.
  * Everything is derived from the track geometry; nothing here is hand-placed.
  */
 export function drawTrack(scene: Phaser.Scene, t: Track): { marks: Phaser.GameObjects.Graphics } {
@@ -31,19 +40,11 @@ export function drawTrack(scene: Phaser.Scene, t: Track): { marks: Phaser.GameOb
   const pad = 900
   const self = scene
 
-  // Ground: flat colour plus a dot grid so motion reads even where no track is in view.
-  const tile = self.make.graphics({ x: 0, y: 0 }, false)
-  tile.fillStyle(COLORS.ground, 1)
-  tile.fillRect(0, 0, 64, 64)
-  tile.fillStyle(COLORS.groundDot, 1)
-  tile.fillCircle(32, 32, 2.2)
-  tile.generateTexture('ground', 64, 64)
-  tile.destroy()
-  self.add
-    .tileSprite(b.minX - pad, b.minY - pad, b.maxX - b.minX + pad * 2, b.maxY - b.minY + pad * 2, 'ground')
-    .setOrigin(0)
-    .setDepth(0)
-  // Surface: fill the outer edge, cut the inner edge back to ground.
+  // Ground: the infield tile everywhere, so motion reads even where no track is in view.
+  const groundW = b.maxX - b.minX + pad * 2
+  const groundH = b.maxY - b.minY + pad * 2
+  self.add.tileSprite(b.minX - pad, b.minY - pad, groundW, groundH, TEX.infield).setOrigin(0).setDepth(0)
+  // Surface: tarmac inside the outer edge, infield again inside the inner edge.
   const area = (pts: { x: number; y: number }[]): number => {
     let a = 0
     for (let i = 0; i < pts.length; i++) {
@@ -57,25 +58,31 @@ export function drawTrack(scene: Phaser.Scene, t: Track): { marks: Phaser.GameOb
   const inner = outer === t.leftEdge ? t.rightEdge : t.leftEdge
   const toVec = (pts: { x: number; y: number }[]) => pts.map((p) => new Phaser.Math.Vector2(p.x, p.y))
 
-  const surface = self.add.graphics().setDepth(1)
-  surface.fillStyle(COLORS.tarmac, 1)
-  surface.fillPoints(toVec(outer), true)
-  surface.fillStyle(COLORS.ground, 1)
-  surface.fillPoints(toVec(inner), true)
-  // Re-lay the dot grid over the infield so it matches the outside.
-  const inside = (x: number, y: number): boolean => {
-    let hit = false
-    for (let i = 0, j = inner.length - 1; i < inner.length; j = i++) {
-      const a = inner[i]
-      const c = inner[j]
-      if (a.y > y !== c.y > y && x < ((c.x - a.x) * (y - a.y)) / (c.y - a.y) + a.x) hit = !hit
-    }
-    return hit
-  }
-  surface.fillStyle(COLORS.groundDot, 1)
-  for (let x = Math.floor(b.minX / 64) * 64 + 32; x < b.maxX; x += 64) {
-    for (let y = Math.floor(b.minY / 64) * 64 + 32; y < b.maxY; y += 64) {
-      if (inside(x, y)) surface.fillCircle(x, y, 2.2)
+  // The road is baked once: the tarmac tile over the track's bounds, with
+  // everything outside the outer edge and inside the inner edge erased. The
+  // polygons are what keep the road exact to the simulation; the bake is
+  // only because a texture cannot be poured into a Graphics fill directly.
+  {
+    const M = 40
+    const bx = b.minX - M
+    const by = b.minY - M
+    const bw = Math.ceil(b.maxX - b.minX + M * 2)
+    const bh = Math.ceil(b.maxY - b.minY + M * 2)
+    const dt = self.textures.addDynamicTexture('surface', bw, bh)
+    if (dt) {
+      const local = (pts: { x: number; y: number }[]) => pts.map((p) => new Phaser.Math.Vector2(p.x - bx, p.y - by))
+      const tarmac = self.make.tileSprite({ x: 0, y: 0, width: bw, height: bh, key: TEX.tarmac, add: false }).setOrigin(0)
+      dt.draw(tarmac, 0, 0)
+      const cut = self.make.graphics({ x: 0, y: 0 }, false)
+      cut.fillStyle(0xffffff, 1)
+      cut.fillPoints(outsideOf(local(outer), bw, bh), true)
+      cut.fillPoints(local(inner), true)
+      dt.erase(cut, 0, 0)
+      // Phaser 4 buffers draw commands; nothing lands until this.
+      dt.render()
+      tarmac.destroy()
+      cut.destroy()
+      self.add.image(bx, by, 'surface').setOrigin(0).setDepth(1)
     }
   }
 
@@ -189,20 +196,52 @@ export function drawTrack(scene: Phaser.Scene, t: Track): { marks: Phaser.GameOb
   return { marks }
 }
 
-/** Generate the car texture once; the player and the ghost share it. */
-export function makeCarTexture(scene: Phaser.Scene): void {
-  if (scene.textures.exists('car')) return
-  const g = scene.make.graphics({ x: 0, y: 0 }, false)
-  const L = CAR_LENGTH
-  const W = CAR_WIDTH
-  g.fillStyle(0x000000, 0.35)
-  g.fillRoundedRect(3, 3, L, W, 4)
-  g.fillStyle(COLORS.car, 1)
-  g.fillRoundedRect(1, 1, L, W, 4)
-  g.fillStyle(COLORS.carNose, 1)
-  g.fillRoundedRect(L - 8, 3, 7, W - 4, 2)
-  g.fillStyle(0x2a1d0c, 1)
-  g.fillRoundedRect(9, 5, 9, W - 8, 2)
-  g.generateTexture('car', L + 4, W + 4)
-  g.destroy()
+/**
+ * The complement of a polygon within a w×h box, as one polygon: the box's
+ * outline, a zero-width slit in to the polygon, the polygon traced in the
+ * opposite winding, and the slit back out. Earcut triangulates this
+ * directly, so a Graphics fill can carve "everything but the road".
+ */
+function outsideOf(poly: Phaser.Math.Vector2[], w: number, h: number): Phaser.Math.Vector2[] {
+  let area = 0
+  for (let i = 0; i < poly.length; i++) {
+    const p = poly[i]
+    const q = poly[(i + 1) % poly.length]
+    area += p.x * q.y - q.x * p.y
+  }
+  // The box below is wound with positive signed area; the hole must run the other way.
+  const hole = area > 0 ? [...poly].reverse() : [...poly]
+  // Bridge from the box corner to the hole's nearest vertex.
+  let k = 0
+  let best = Infinity
+  for (let i = 0; i < hole.length; i++) {
+    const d = hole[i].x * hole[i].x + hole[i].y * hole[i].y
+    if (d < best) {
+      best = d
+      k = i
+    }
+  }
+  const box = [
+    new Phaser.Math.Vector2(0, 0),
+    new Phaser.Math.Vector2(w, 0),
+    new Phaser.Math.Vector2(w, h),
+    new Phaser.Math.Vector2(0, h),
+    new Phaser.Math.Vector2(0, 0),
+  ]
+  const ring: Phaser.Math.Vector2[] = []
+  for (let i = 0; i <= hole.length; i++) ring.push(hole[(k + i) % hole.length])
+  return [...box, ...ring]
+}
+
+/**
+ * A car sprite from the loaded image, scaled uniformly so it is CAR_LENGTH
+ * long — the simulation's size, which the tyre-mark offsets share. The
+ * player and the ghost both use this; the ghost sets its own alpha.
+ */
+export function makeCarSprite(scene: Phaser.Scene): Phaser.GameObjects.Image {
+  const img = scene.add.image(0, 0, TEX.car)
+  img.setScale(CAR_LENGTH / img.width)
+  // The pivot sits a touch ahead of centre so the nose leads the turn.
+  img.setOrigin(0.54, 0.5)
+  return img
 }

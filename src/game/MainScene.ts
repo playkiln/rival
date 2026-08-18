@@ -19,9 +19,23 @@ import {
 } from './sim/recording'
 import { nextVolume, volumeLabel } from './settings'
 import { buildTrack, type Track } from './sim/track'
-import { CAR_LENGTH, CAR_WIDTH, COLORS, drawTrack, makeCarTexture } from './TrackRenderer'
+import { CAR_LENGTH, CAR_WIDTH, COLORS, drawTrack, makeCarSprite, queueWorldAssets } from './TrackRenderer'
 import { TRACK } from './track-data'
-import { UI, backdrop, button, label, settingRow, type Button, type SettingRow } from './ui/widgets'
+import {
+  UI,
+  backdropImage,
+  button,
+  coverFit,
+  label,
+  logo,
+  medal,
+  panelFrame,
+  queueUiAssets,
+  setMedalEarned,
+  settingRow,
+  type Button,
+  type SettingRow,
+} from './ui/widgets'
 
 export type { SessionEndResult, SessionStartContext }
 
@@ -153,10 +167,11 @@ export class MainScene extends Phaser.Scene {
 
   // Panels
   private dim!: Phaser.GameObjects.Rectangle
+  private backdrop!: Phaser.GameObjects.Image
   private menuPanel!: Phaser.GameObjects.Container
   private menuRival!: Phaser.GameObjects.Text
   private menuBest!: Phaser.GameObjects.Text
-  private menuMedals: Phaser.GameObjects.Text[] = []
+  private menuMedals: Phaser.GameObjects.Image[] = []
   private pausePanel!: Phaser.GameObjects.Container
   private settingsPanel!: Phaser.GameObjects.Container
   private settingsRows!: { music: SettingRow; musicVol: SettingRow; sound: SettingRow; soundVol: SettingRow }
@@ -165,6 +180,7 @@ export class MainScene extends Phaser.Scene {
   private endTime!: Phaser.GameObjects.Text
   private endDelta!: Phaser.GameObjects.Text
   private endMedal!: Phaser.GameObjects.Text
+  private endMedalImage!: Phaser.GameObjects.Image
   private endNext!: Phaser.GameObjects.Text
   private endButton!: Button
 
@@ -204,6 +220,8 @@ export class MainScene extends Phaser.Scene {
   }
 
   preload(): void {
+    queueWorldAssets(this.load)
+    queueUiAssets(this.load)
     GameAudio.queueAssets(this.load)
   }
 
@@ -218,9 +236,8 @@ export class MainScene extends Phaser.Scene {
     this.autodrive = devFlag('autodrive')
 
     this.marks = drawTrack(this, this.track).marks
-    makeCarTexture(this)
-    this.ghostSprite = this.add.image(0, 0, 'car').setOrigin(0.55, 0.5).setDepth(5).setAlpha(0.42).setVisible(false)
-    this.carSprite = this.add.image(0, 0, 'car').setOrigin(0.55, 0.5).setDepth(6)
+    this.ghostSprite = makeCarSprite(this).setDepth(5).setAlpha(0.42).setVisible(false)
+    this.carSprite = makeCarSprite(this).setDepth(6)
     this.createHud()
     this.createPanels()
     this.bindInput()
@@ -299,6 +316,7 @@ export class MainScene extends Phaser.Scene {
     this.audio.setMusicState('menu')
     this.paintMenu()
     this.dim.setVisible(true)
+    this.backdrop.setVisible(true)
     this.menuPanel.setVisible(true)
     this.hudHint.setText('')
     this.pauseButton.container.setVisible(false)
@@ -310,10 +328,7 @@ export class MainScene extends Phaser.Scene {
     this.menuRival.setText(this.rival ? `Rival: ${this.rivalLabel()}` : '')
     this.menuRival.setColor(this.rival?.kind === 'medal' ? MEDAL_COLOR[this.rival.medal] : UI.accent)
     this.menuBest.setText(this.bestLabel())
-    MEDAL_ORDER.forEach((m, i) => {
-      const earned = this.progress.medals.includes(m)
-      this.menuMedals[i].setText(earned ? '●' : '○').setColor(earned ? MEDAL_COLOR[m] : UI.dim)
-    })
+    MEDAL_ORDER.forEach((m, i) => setMedalEarned(this.menuMedals[i], this.progress.medals.includes(m)))
   }
 
   private startCountdown(): void {
@@ -363,7 +378,7 @@ export class MainScene extends Phaser.Scene {
       this.endTitle.setText('LAP INVALID').setColor(UI.bad)
       this.endTime.setText(formatMs(ms))
       this.endDelta.setText('a checkpoint was missed — the circuit cannot be cut').setColor(UI.dim)
-      this.endMedal.setText('')
+      this.showEndMedal(null, '')
       this.endNext.setText('')
     } else {
       const outcome = applyLap(this.progress, ms, recording)
@@ -389,11 +404,11 @@ export class MainScene extends Phaser.Scene {
       }
       if (outcome.earned.length) {
         const top = outcome.earned[outcome.earned.length - 1]
-        this.endMedal.setText(`${MEDAL_LABEL[top]} MEDAL`).setColor(MEDAL_COLOR[top])
+        this.showEndMedal(top, `${MEDAL_LABEL[top]} MEDAL`)
       } else if (this.progress.medals.length === 3) {
-        this.endMedal.setText('ALL MEDALS').setColor(UI.gold)
+        this.showEndMedal('gold', 'ALL MEDALS')
       } else {
-        this.endMedal.setText('')
+        this.showEndMedal(null, '')
       }
       const next = rivalFor(this.progress)
       const nextLabel =
@@ -404,8 +419,24 @@ export class MainScene extends Phaser.Scene {
       )
     }
     this.dim.setVisible(true)
+    this.backdrop.setVisible(true)
     this.endPanel.setVisible(true)
     this.endReadyAt = this.time.now + END_GUARD_MS
+  }
+
+  /** The end screen's medal line: the image beside the words, or nothing. */
+  private showEndMedal(tier: MedalKey | null, text: string): void {
+    this.endMedal.setText(text).setColor(tier ? MEDAL_COLOR[tier] : UI.text)
+    if (!tier) {
+      this.endMedalImage.setVisible(false)
+      return
+    }
+    this.endMedalImage.setTexture(`medal-${tier}`).setVisible(true)
+    this.endMedalImage.setScale(40 / this.endMedalImage.height)
+    // Sit the picture just left of the words and nudge the words over to make room.
+    const half = this.endMedal.width / 2
+    this.endMedal.setX(14)
+    this.endMedalImage.setPosition(14 - half - 22, 0)
   }
 
   /** Ask for the next session. Fire-and-forget: the host answers with a fresh session.start, which lands where `intent` says. */
@@ -526,16 +557,18 @@ export class MainScene extends Phaser.Scene {
 
   private createPanels(): void {
     this.dim = this.add.rectangle(0, 0, 10, 10, 0x000000, 0.45).setOrigin(0).setDepth(HUD_DEPTH).setVisible(false)
+    // Scenery behind the menu and end panels; the pause panel keeps the live track under it instead.
+    this.backdrop = backdropImage(this).setDepth(HUD_DEPTH).setVisible(false)
     const panel = (items: Phaser.GameObjects.GameObject[]): Phaser.GameObjects.Container =>
       this.add
-        .container(0, 0, [backdrop(this, PANEL_W, PANEL_H), ...items])
+        .container(0, 0, [panelFrame(this, PANEL_W, PANEL_H), ...items])
         .setDepth(HUD_DEPTH)
         .setVisible(false)
 
     // Main menu: who you race, what you hold, and the way in.
     {
-      const title = label(this, 'RIVAL', 44, UI.accent)
-      title.setY(-128)
+      const title = logo(this, 210)
+      title.setY(-126)
       const sub = label(this, 'one lap · one input', 15, UI.dim)
       sub.setY(-92)
       const how = label(this, 'hold to turn left · release to turn right', 13, UI.dim)
@@ -544,10 +577,10 @@ export class MainScene extends Phaser.Scene {
       this.menuRival.setY(-30)
       this.menuBest = label(this, '', 14, UI.dim)
       this.menuBest.setY(-6)
-      // The ladder: three pips, lit as they are earned. Legible after gold too.
-      this.menuMedals = MEDAL_ORDER.map((_, i) => {
-        const pip = label(this, '○', 18, UI.dim)
-        pip.setPosition((i - 1) * 28, 22)
+      // The ladder: three medals, lit as they are earned. Legible after gold too.
+      this.menuMedals = MEDAL_ORDER.map((m, i) => {
+        const pip = medal(this, m, 34)
+        pip.setPosition((i - 1) * 40, 26)
         return pip
       })
       const go = button(this, 'RACE', 220, 46, () => this.startCountdown(), true)
@@ -614,6 +647,7 @@ export class MainScene extends Phaser.Scene {
       this.endDelta.setY(-34)
       this.endMedal = label(this, '', 20)
       this.endMedal.setY(0)
+      this.endMedalImage = medal(this, 'bronze', 40).setVisible(false)
       this.endNext = label(this, '', 13, UI.dim)
       this.endNext.setY(32)
       this.endButton = button(this, 'RACE AGAIN', 220, 46, () => this.raceAgain(), true)
@@ -626,6 +660,7 @@ export class MainScene extends Phaser.Scene {
         this.endTitle,
         this.endTime,
         this.endDelta,
+        this.endMedalImage,
         this.endMedal,
         this.endNext,
         this.endButton.container,
@@ -638,6 +673,7 @@ export class MainScene extends Phaser.Scene {
   private hidePanels(): void {
     this.settingsOpen = false
     this.dim.setVisible(false)
+    this.backdrop.setVisible(false)
     this.menuPanel.setVisible(false)
     this.pausePanel.setVisible(false)
     this.settingsPanel.setVisible(false)
@@ -672,6 +708,7 @@ export class MainScene extends Phaser.Scene {
     this.hudHint.setPosition(w / 2, h - 14)
     this.pauseButton.container.setPosition(w - 36, 28)
     this.dim.setSize(w, h)
+    coverFit(this.backdrop, w, h)
     // Small screens: scale panels down rather than clip.
     const ps = Phaser.Math.Clamp(Math.min(w / (PANEL_W + 20), h / (PANEL_H + 20)), 0.6, 1)
     for (const panel of [this.menuPanel, this.pausePanel, this.settingsPanel, this.endPanel]) {

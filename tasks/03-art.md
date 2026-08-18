@@ -31,7 +31,7 @@ cannot be made to line up with the simulation.
    generated in one or two sittings.
 3. **No real transparency.** Grok cannot be trusted to emit transparent PNGs.
    Everything that needs alpha is generated on **solid magenta (#FF00FF)** and
-   keyed out locally with `tools/key-art.sh` (ported from Snake). Magenta
+   keyed out locally with `tools/key-art.mjs` (Snake's `key-art.sh`, on sharp). Magenta
    appears nowhere in Rival's palette, so keying is safe. Full-bleed images
    (backdrop, card, tiles) need no magenta.
 
@@ -185,8 +185,8 @@ block.
 
 ## Integration plan (Claude)
 
-- Port `tools/key-art.sh` from Snake; key magenta → alpha, trim, downscale,
-  slice `medals-sheet`.
+- Port `tools/key-art.sh` from Snake as `tools/key-art.mjs`; key magenta →
+  alpha, trim, downscale, slice `medals-sheet`.
 - `makeCarTexture()` in `TrackRenderer.ts` is replaced by the loaded `car`
   image, keeping `CAR_LENGTH` / `CAR_WIDTH` as the display size so the
   simulation and the tyre-mark offsets are untouched. The ghost keeps sharing
@@ -206,15 +206,40 @@ block.
 
 ## Acceptance criteria
 
-- [ ] Car, surfaces, panels, buttons, medals and backdrop all image-backed;
+- [x] Car, surfaces, panels, buttons, medals and backdrop all image-backed;
       no placeholder rectangles in normal play.
-- [ ] The car reads clearly at the real in-game size on a phone viewport
+- [x] The car reads clearly at the real in-game size on a phone viewport
       (squint test), at both zoom extremes.
-- [ ] Tiles are seamless — no visible grid at any camera position.
-- [ ] Kerbs, borders, checkpoint lines and chequer still align exactly with
+- [x] Tiles are seamless — no visible grid at any camera position (edge
+      seam difference measured equal to the interior grain on both tiles).
+- [x] Kerbs, borders, checkpoint lines and chequer still align exactly with
       the drivable surface.
-- [ ] One coherent style across every asset; palette matches the game's.
-- [ ] No text baked into any image except the optional wordmark.
-- [ ] No magenta fringing on any keyed asset.
-- [ ] Store card and icon updated in the manifest, accent colour agreed.
-- [ ] `playkiln validate` passes; package comfortably inside budget.
+- [x] One coherent style across every asset; palette matches the game's.
+- [x] No text baked into any image except the optional wordmark — which
+      came out clean and is in.
+- [x] No magenta fringing on any keyed asset.
+- [x] Store card and icon updated in the manifest, accent colour agreed.
+- [x] `playkiln validate` passes; package comfortably inside budget
+      (8.7 MB, 448 KB of it art).
+
+## How it landed
+
+- `tools/key-art.mjs` (sharp, not ImageMagick — this machine has none) keys
+  each magenta asset on its own sampled corner colour, un-mixes the key out
+  of anti-aliased edge pixels, and despills the JPEG chroma bleed on dark
+  edges (`min(R,B) > G`, which nothing in the palette satisfies). It slices
+  the medal sheet on its empty columns and sizes everything for 2–3× its
+  on-screen footprint.
+- The road is **baked once** into a `DynamicTexture`: the tarmac tile over
+  the track's bounds, minus the infield polygon and minus the outside of the
+  outer edge (drawn as one slit polygon so a plain fill can carve it). Phaser
+  4 removed `setMask` in WebGL and buffers DynamicTexture drawing until
+  `render()`, both of which the first attempt learned the hard way. The
+  borders, kerbs, checkpoint lines and chequer are untouched and still come
+  from the geometry.
+- Frames are nine-sliced from 2× images drawn at half scale, so the corner
+  brackets keep their proportion on any panel size and stay crisp on dense
+  screens. Button primary/hover states are a fill and a wash drawn in code
+  inside the one frame image.
+- The menu title is the wordmark; the ladder is three medal images, dark
+  when unearned; the end screen puts the medal beside its line.

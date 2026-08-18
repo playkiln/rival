@@ -13,9 +13,9 @@
     "duration": true
   },
   "presentation": {
-    "cardImage": "assets/card.svg",
+    "cardImage": "assets/card.jpg",
     "accent": "#ffb347",
-    "icon": "assets/card.svg"
+    "icon": "assets/icon.png"
   },
   "privacy": {
     "usesNetwork": false

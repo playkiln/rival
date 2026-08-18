@@ -389,12 +389,12 @@ Before dropping a file in the inbox, check it is not:
 
 ## Notes for Claude, not for the generator
 
-- `COLORS.ground` is currently `#18231b` (dark green) while A3 specifies
-  `#12161C`. The art defines the look — bring the fallback colour to match the
-  tile during integration rather than rerolling the tile.
-- `presentation.accent` is already `#ffb347` and agrees with `UI.accent`; the
-  outstanding manifest work is `cardImage` → `card.jpg` and `icon` →
-  `icon.png`.
+- The delivered art arrived as `.jpg` throughout (Grok's export), including the
+  "png" assets; `tools/key-art.mjs` reads `.jpg` and keys from there. Grok's
+  magenta drifted per image (`#FC02FD` … `#E8038A`), which is why the tool
+  keys on each image's own corner colour.
+- `presentation.accent` is `#ffb347` and agrees with `UI.accent`; `cardImage`
+  is `card.jpg` and `icon` is `icon.png`.
 - The in-game ghost is the player car at alpha 0.42, so A8's ghost car is
   honest to the game rather than artistic licence. Keep it that way if the card
   is ever regenerated.
