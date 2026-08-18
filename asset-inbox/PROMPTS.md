@@ -21,7 +21,9 @@ asset-inbox/art/     ← Grok images           (9 required + 1 optional)
 
 Claude then trims and loop-crossfades the music, keys the magenta out of the
 art, slices sheets, downscales, and wires it all in. Raw inbox files stay
-committed so anything can be re-derived without a new generation.
+committed so anything can be re-derived without a new generation — music as
+FLAC (lossless, so still the raw take, at half the size of WAV), art as
+delivered.
 
 **Rerolls:** if you generate several candidates and cannot decide, drop the
 runners-up as `car-b.png`, `race-loop-b.wav` and so on. Claude picks against
