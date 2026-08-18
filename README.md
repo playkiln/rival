@@ -21,7 +21,7 @@ updated at release:
 | Protocol | 1 (`minSdkVersion: 1`) |
 | SDK | `@playkiln/game-sdk` 1.0.0, vendored into `public/playkiln-sdk.js` |
 | CLI | `@playkiln/cli` 1.2.0 |
-| Capabilities | none yet |
+| Capabilities | `storage`, `audio` (declared at runtime in `init`, both honoured) |
 
 ## Not maintained forward
 
@@ -42,6 +42,16 @@ npm run dev          # local Vite dev server
 playkiln preview     # build + real Playkiln host sandbox
 playkiln validate    # build when needed, then validate dist/
 playkiln publish     # build → validate → deterministic ZIP + checksum
+```
+
+Assets are derived, never hand-edited. The raw Suno and Grok deliveries live
+in `asset-inbox/` (with the prompts that produced them in
+`asset-inbox/PROMPTS.md`), and three tools turn them into what ships:
+
+```bash
+bash tools/process-music.sh   # loops + sting → public/assets/audio/music
+node tools/generate-sfx.mjs   # synthesized SFX → public/assets/audio/sfx
+node tools/key-art.mjs        # keyed, sliced, sized art → public/assets/art
 ```
 
 Validation and publish always check the production package in `dist/`, not the

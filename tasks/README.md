@@ -1,5 +1,10 @@
 # Rival — polish roadmap
 
+> **Status (2026-08-18): all three tasks landed.** Menus and flow, audio, and
+> art are in; the acceptance lists in each task file record what was
+> verified and how. The one box still open is a headphone listen for the
+> loop seams (Task 2), which a headless run cannot tick.
+
 The game is complete and publishable (stages 1–3 done). These three tasks take
 it from "complete" to "polished", following the same shape that worked on
 Snake. **No gameplay changes**: the car, the track, the ghost, the medal
