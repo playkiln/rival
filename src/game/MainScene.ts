@@ -87,6 +87,7 @@ function lerpAngle(a: number, b: number, t: number): number {
 export class MainScene extends Phaser.Scene {
   private endHandler: ((result: SessionEndResult) => void) | null = null
   private replayHandler: (() => void) | null = null
+  private saveHandler: ((progress: Progress) => void) | null = null
   private sessionId: string | null = null
   private sessionStartedAt = 0
 
@@ -156,6 +157,28 @@ export class MainScene extends Phaser.Scene {
     this.replayHandler = handler
   }
 
+  /**
+   * Adopt progress restored from the save document.
+   *
+   * Called before the first session, so the menu already shows the right best
+   * and `beginSession` picks the right rival. On a host without storage this
+   * never fires and the scene keeps the blank ladder it was created with — the
+   * medal ghosts make that a complete game rather than a degraded one.
+   */
+  setProgress(progress: Progress): void {
+    this.progress = progress
+    // The scene may not have run create() yet; showMenu() paints this anyway.
+    if (this.menuBest) this.menuBest.setText(this.bestLabel())
+  }
+
+  setSaveHandler(handler: (progress: Progress) => void): void {
+    this.saveHandler = handler
+  }
+
+  private bestLabel(): string {
+    return this.progress.bestMs === null ? '' : `Your best ${formatMs(this.progress.bestMs)}`
+  }
+
   create(): void {
     this.track = buildTrack(TRACK)
     this.car = createCar(this.track, this.params)
@@ -190,7 +213,9 @@ export class MainScene extends Phaser.Scene {
     this.resetRun()
     this.rival = rivalFor(this.progress)
     this.ghost = makeGhost(this.track, this.rival.lap)
-    this.hudRival.setText(this.rivalLabel())
+    // Captioned: uncaptioned "BRONZE 0:27.617" in bronze reads as a medal the
+    // player already holds rather than the time they are chasing.
+    this.hudRival.setText(`RIVAL ${this.rivalLabel()}`)
     this.hudRival.setColor(this.rival.kind === 'medal' ? MEDAL_COLOR[this.rival.medal] : UI.accent)
     this.hidePanels()
     if (ctx.attempt === 1) this.showMenu()
@@ -239,7 +264,7 @@ export class MainScene extends Phaser.Scene {
     this.state = 'menu'
     this.menuRival.setText(`Rival: ${this.rivalLabel()}`)
     this.menuRival.setColor(this.rival?.kind === 'medal' ? MEDAL_COLOR[this.rival.medal] : UI.accent)
-    this.menuBest.setText(this.progress.bestMs === null ? '' : `Your best ${formatMs(this.progress.bestMs)}`)
+    this.menuBest.setText(this.bestLabel())
     this.dim.setVisible(true)
     this.menuPanel.setVisible(true)
     this.hudHint.setText('')
@@ -292,6 +317,9 @@ export class MainScene extends Phaser.Scene {
       this.endNext.setText('')
     } else {
       const outcome = applyLap(this.progress, ms, recording)
+      // Persist on a new best or a new medal, and on nothing else. A game that
+      // writes on every retry makes a cheap capability look expensive.
+      if (outcome.newBest || outcome.earned.length) this.saveHandler?.(this.progress)
       this.endTitle.setText(outcome.newBest ? 'NEW BEST' : 'LAP COMPLETE').setColor(outcome.newBest ? UI.accent : UI.text)
       this.endTime.setText(formatMs(ms))
       if (rival) {

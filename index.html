@@ -24,8 +24,10 @@
     </style>
     <!-- Official Playkiln SDK (protocol v1) — host owns sessions and results -->
     <script>
-      // Capabilities are declared only once they are true: audio arrives with the sound stage.
-      window.PlaykilnOptions = { capabilities: {} }
+      // Capabilities are declared only once they are genuinely handled, absent
+      // case and all. Audio arrives with the sound stage; storage is handled by
+      // src/host/SaveStore.ts, including hosts that have none.
+      window.PlaykilnOptions = { capabilities: { storage: true } }
     </script>
     <script src="./playkiln-sdk.js"></script>
   </head>

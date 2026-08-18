@@ -27,10 +27,18 @@ This is a Playkiln game package (slug `rival`).
    a fresh `session.start`, which must reset the run cleanly.
 5. If the engine fails to bind, `reportError({ fatal: true })` — do **not** call
    `ready()`. `ready` means "I can accept sessions"; a game that cannot must say so.
-6. `src/host/GameHost.ts` owns all of the above. Gameplay code stays in
-   `src/game/`, knows nothing about postMessage, and is driven only through
-   `beginSession` / `abortSession` / `setEndHandler` / `setReplayHandler`.
-7. Truth is `playkiln validate` and the `playkiln preview` protocol log — not
+6. Read the save **before** `ready()`. `ready` licenses the host to start
+   session one immediately, and a session that starts before the save is read
+   races the wrong ghost. `HostInfo.storage` absent means this host has no
+   saves: run medals-only, with no error and no banner. A document that will
+   not parse is treated as absent — a corrupt save must never break the game.
+   Write only on a new personal best or a newly earned medal, never every lap,
+   and treat write failures as non-fatal.
+7. `src/host/GameHost.ts` and `src/host/SaveStore.ts` own all of the above.
+   Gameplay code stays in `src/game/`, knows nothing about postMessage or the
+   SDK, and is driven only through `beginSession` / `abortSession` /
+   `setEndHandler` / `setReplayHandler` / `setProgress` / `setSaveHandler`.
+8. Truth is `playkiln validate` and the `playkiln preview` protocol log — not
    assistant memory. If preview hangs on "waiting for host session", look for
    `ready` and for `iframe.exception` lines in that log before suspecting the host.
 

@@ -23,6 +23,9 @@
  * `GameSceneBinding`, which keeps it unit-testable without an engine.
  */
 
+import type { Progress } from '../game/progress'
+import type { SaveStore } from './SaveStore'
+
 export type SessionEndResult = {
   sessionId: string
   outcome: 'completed' | 'failed' | 'quit'
@@ -56,18 +59,46 @@ export type PlaykilnHost = {
 export type GameSceneBinding = {
   setEndHandler(handler: (result: SessionEndResult) => void): void
   setReplayHandler(handler: () => void): void
+  /** Progress recovered from the save document. Called before the first session. */
+  setProgress(progress: Progress): void
+  /** Called when progress changed in a way worth persisting — best or medal. */
+  setSaveHandler(handler: (progress: Progress) => void): void
   beginSession(ctx: SessionStartContext): void
   abortSession(): void
 }
 
 export class GameHost {
   private readonly host: PlaykilnHost
+  private saves: SaveStore | null = null
+  private restored: Progress | null = null
   private scene: GameSceneBinding | null = null
   private pendingSession: SessionStartContext | null = null
   private terminated = false
 
   constructor(host: PlaykilnHost) {
     this.host = host
+  }
+
+  /**
+   * Hand the controller its save store, once `init()` has said whether this
+   * host has storage at all. Never called ⇒ the game runs medals-only, which
+   * is a complete game and not an error state.
+   */
+  useSaves(saves: SaveStore): void {
+    this.saves = saves
+  }
+
+  /**
+   * Read the save document, before `ready()`.
+   *
+   * Reading after `ready()` would let the host start session one while the
+   * scene still holds a blank ladder — the player's first lap of the visit
+   * would race the bronze ghost and their own best would appear only on the
+   * second. Never resolves to a rejection: no saves, a first-time player and an
+   * unreadable document are all just "start fresh".
+   */
+  async restoreProgress(): Promise<void> {
+    this.restored = (await this.saves?.load()) ?? null
   }
 
   /**
@@ -98,6 +129,15 @@ export class GameHost {
   /** Wire the scene and start any session the host sent while booting. */
   bindScene(scene: GameSceneBinding): void {
     this.scene = scene
+
+    // Before any handler that can start a run: the first session must already
+    // see the restored ladder.
+    if (this.restored) scene.setProgress(this.restored)
+
+    scene.setSaveHandler((progress) => {
+      if (this.terminated) return
+      this.saves?.save(progress)
+    })
 
     scene.setEndHandler((result) => {
       if (this.terminated) return

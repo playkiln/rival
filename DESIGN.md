@@ -11,8 +11,9 @@ persistence. Done when it is fun to drive with nothing else in the game.
 **Stage 2 — The ghost.** Recording, playback, medals, the session lifecycle,
 sound, the end screen. Done when the game is complete and publishable.
 
-**Stage 3 — Saves.** The best lap survives between visits. Requires a platform
-capability that does not exist yet (see §11).
+**Stage 3 — Saves.** The best lap survives between visits, on the platform's
+storage capability (see §13). Additive by design: the game plays the same
+without it.
 
 Do not build stage 2 while stage 1 is unresolved. A progression system hides a
 bad handling model — you stop noticing the car is unpleasant because you are
@@ -150,8 +151,8 @@ Three ghosts ship **inside the package** as encoded data, hand-driven during
 development: bronze, silver, gold.
 
 - Session one races bronze. Beating a medal reveals the next.
-- Beating gold switches the ghost permanently to the player's own best.
-- Until saves exist, "permanently" means for the visit.
+- Beating gold switches the ghost permanently to the player's own best. With
+  saves (§13) that survives the visit; on a host without them it lasts the tab.
 
 This is why the game is complete without any storage: **there is always a
 rival.**
@@ -231,14 +232,15 @@ with the SDK vendored and referenced relatively.
 
 ---
 
-## 13. Saves — not yet available
+## 13. Saves
 
-> **The SDK on npm today is 1.0.0 and has no storage API.** `HostInfo.storage`
-> and `pk.storage` do not exist yet. Do not write against them. This section is
-> here so the game is built in a shape that accepts them later, not so it can be
-> implemented now.
+Built against SDK 1.1.0, which ships inside CLI 1.3.0. `src/host/SaveStore.ts`
+owns the seam with the platform and `src/game/progress.ts` owns the format;
+nothing else in the game knows saves exist. `MainScene` receives progress
+through `setProgress` and announces changes through `setSaveHandler`, exactly
+as it receives sessions — it never touches the SDK.
 
-When it lands, the save is one JSON object in a single opaque slot:
+The save is one JSON object in a single opaque slot:
 
 ```jsonc
 {
@@ -264,10 +266,16 @@ shape.
 - Write failures are non-fatal: `reportError({ fatal: false })` and carry on. A
   player who cannot save should still be able to race.
 - Read the size limit from `HostInfo.storage.maxBytes` rather than hard-coding.
+- Writes are queued, so two quick personal bests cannot land out of order.
 
-What this means for stages 1–2: keep the encoder pure, keep best-time and medal
-state in one plain object that can be serialised whole, and keep the "no saved
-data" path as the normal case rather than an error branch.
+A real document with a best lap in it is about **3.9 KB** — comfortably inside
+both the 16 KB the game budgets for itself and the platform's 64 KB limit. The
+size is asserted in `scripts/save.test.ts` so a change to the encoder cannot
+quietly grow it.
+
+The "no saved data" path is the normal case, not an error branch: a host with
+no storage, a first-time player, and a document that will not parse are all
+just `null`, and the medal ghosts make that a complete game (§8).
 
 ---
 

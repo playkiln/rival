@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc -p tsconfig.json --noEmit && vite build",
     "preview": "vite preview",
-    "test": "esbuild scripts/recording.test.ts --bundle --platform=node --outfile=node_modules/.cache/rival-tests/recording.test.cjs --log-level=warning && node node_modules/.cache/rival-tests/recording.test.cjs",
+    "test": "esbuild scripts/recording.test.ts --bundle --platform=node --outfile=node_modules/.cache/rival-tests/recording.test.cjs --log-level=warning && node node_modules/.cache/rival-tests/recording.test.cjs && esbuild scripts/save.test.ts --bundle --platform=node --outfile=node_modules/.cache/rival-tests/save.test.cjs --log-level=warning && node node_modules/.cache/rival-tests/save.test.cjs && esbuild scripts/saves.host.test.ts --bundle --platform=node --outfile=node_modules/.cache/rival-tests/saves.host.test.cjs --log-level=warning && node node_modules/.cache/rival-tests/saves.host.test.cjs",
     "ghosts": "esbuild scripts/record-ghosts.ts --bundle --platform=node --outfile=node_modules/.cache/rival-tests/record-ghosts.cjs --log-level=warning && node node_modules/.cache/rival-tests/record-ghosts.cjs",
     "simcheck": "esbuild scripts/simcheck.ts --bundle --platform=node --outfile=node_modules/.cache/rival-tests/simcheck.cjs --log-level=warning && node node_modules/.cache/rival-tests/simcheck.cjs"
   },

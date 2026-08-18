@@ -59,7 +59,44 @@ export function applyLap(p: Progress, ms: number, lap: LapRecording): LapOutcome
   return { newBest, earned }
 }
 
-/** The save-document shape, for when storage lands. Not written anywhere yet. */
-export function serialiseProgress(p: Progress): { v: 1; bestMs: number | null; ghost: string | null; medals: MedalKey[] } {
-  return { v: 1, bestMs: p.bestMs, ghost: p.best ? encodeLap(p.best) : null, medals: [...p.medals] }
+/** Rival's own save-document format version. This is not the protocol version. */
+export const SAVE_FORMAT_VERSION = 1
+
+export type SaveDocument = {
+  v: typeof SAVE_FORMAT_VERSION
+  bestMs: number | null
+  ghost: string | null
+  medals: MedalKey[]
+}
+
+/** The save document, as one JSON object for the single opaque storage slot. */
+export function serialiseProgress(p: Progress): SaveDocument {
+  return { v: SAVE_FORMAT_VERSION, bestMs: p.bestMs, ghost: p.best ? encodeLap(p.best) : null, medals: [...p.medals] }
+}
+
+/**
+ * Parse a save document. Anything that is not a well-formed v1 document —
+ * bad JSON, unknown version, a ghost that will not decode, an inconsistent
+ * medal/best pair — yields `null`, and the caller treats the save as absent.
+ * A corrupt save must never break the game; the next personal best overwrites it.
+ */
+export function parseProgress(text: string): Progress | null {
+  try {
+    const raw: unknown = JSON.parse(text)
+    if (typeof raw !== 'object' || raw === null) return null
+    const doc = raw as Record<string, unknown>
+    if (doc.v !== SAVE_FORMAT_VERSION) return null
+    const listed = Array.isArray(doc.medals) ? (doc.medals as unknown[]) : []
+    const medals = MEDAL_ORDER.filter((m) => listed.includes(m))
+    const bestMs =
+      typeof doc.bestMs === 'number' && Number.isFinite(doc.bestMs) && doc.bestMs > 0 ? Math.round(doc.bestMs) : null
+    const best = typeof doc.ghost === 'string' && bestMs !== null ? decodeLap(doc.ghost) : null
+    // A time without its lap cannot be raced; a lap without a time means nothing.
+    if ((bestMs === null) !== (best === null)) return null
+    // Once gold is beaten the player races their own best, so it must exist.
+    if (medals.length === MEDAL_ORDER.length && best === null) return null
+    return { bestMs, best, medals }
+  } catch {
+    return null
+  }
 }

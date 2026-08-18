@@ -1,6 +1,7 @@
 import Phaser from 'phaser'
 import { MainScene } from './game/MainScene'
 import { GameHost, type PlaykilnHost } from './host/GameHost'
+import { SaveStore } from './host/SaveStore'
 
 /**
  * Rival — Playkiln Phaser starter
@@ -9,12 +10,18 @@ import { GameHost, type PlaykilnHost } from './host/GameHost'
  *
  *   1. init()                    handshake with the host
  *   2. attachHostHandlers()      subscribe BEFORE any engine work that can throw
- *   3. new Phaser.Game(...)      the engine boots asynchronously
- *   4. await game ready + scene  never touch getScene() on the next line
- *   5. bindScene()               wire the scene, flush any queued session
- *   6. ready()                   only now may the host start sessions
+ *   3. restoreProgress()         read the save — must precede ready(), see below
+ *   4. new Phaser.Game(...)      the engine boots asynchronously
+ *   5. await game ready + scene  never touch getScene() on the next line
+ *   6. bindScene()               wire the scene, flush any queued session
+ *   7. ready()                   only now may the host start sessions
  *
- * Steps 2 and 6 bracket everything fallible. A crash between them leaves the
+ * Step 3 is before `ready()` on purpose: `ready` licenses the host to start
+ * session one immediately, and a session that starts before the save is read
+ * races the wrong ghost. It never rejects — no storage, no save, and a corrupt
+ * save all resolve to "start fresh".
+ *
+ * Steps 2 and 7 bracket everything fallible. A crash between them leaves the
  * bus alive, so the failure gets reported instead of hanging the host forever.
  *
  * `playkiln preview` prints this sequence in its protocol log. If you do not
@@ -22,9 +29,14 @@ import { GameHost, type PlaykilnHost } from './host/GameHost'
  */
 
 type PlaykilnInit = {
-  init(): Promise<{ audio?: { muted: boolean } }>
+  /** `storage` absent in the HostInfo means this host has no saves at all. */
+  init(): Promise<{ audio?: { muted: boolean }; storage?: { maxBytes: number } }>
   getAudio(): { muted: boolean }
   onAudioChange(handler: (audio: { muted: boolean }) => void): () => void
+  storage: {
+    get(): Promise<string | null>
+    set(value: string): Promise<void>
+  }
 }
 
 const globalSdk = (window as { Playkiln?: PlaykilnHost & PlaykilnInit }).Playkiln
@@ -39,6 +51,8 @@ const playkiln = globalSdk
 /** How long to wait for Phaser to produce a running scene before giving up. */
 const SCENE_TIMEOUT_MS = 10_000
 
+// Built before boot() so the module-level failure path below always has a live
+// bus to report through, even if init() itself throws.
 const host = new GameHost(playkiln)
 let runningGame: Phaser.Game | null = null
 
@@ -138,6 +152,11 @@ async function boot(): Promise<void> {
   host.attachHostHandlers()
   playkiln.loading(0.3)
 
+  // `info.storage` absent ⇒ this host has no saves. The store handles that
+  // itself, so there is no branch here and no medals-only special case.
+  host.useSaves(new SaveStore(playkiln, info.storage))
+  const restore = host.restoreProgress()
+
   const game = createGame()
   runningGame = game
   await waitForGameReady(game)
@@ -145,6 +164,9 @@ async function boot(): Promise<void> {
   playkiln.loading(0.7)
 
   const scene = await waitForScene<MainScene>(game, 'MainScene')
+  // Engine boot and the save read overlap; both must be done before bindScene,
+  // which is what hands the restored ladder to the scene.
+  await restore
   host.bindScene(scene)
   playkiln.loading(1)
 
